@@ -1,26 +1,29 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!--
-  FaceSorter per-user MSI（免管理员一键安装）
-  - 装到 %LocalAppData%\Programs\FaceSorter，保住"exe 旁 data/ 便携数据"设计
+  FaceSorter per-user MSI（免管理员一键安装），变体参数化：
+    %1=yunet    → FaceSorter（YuNet+SFace，主线，UpgradeCode b0a966f0-… 沿用可覆盖升级 1.0.x）
+    %1=arcface  → FaceSorter-ArcFace（SCRFD+ArcFace，独立目录/UpgradeCode，可与主线并排装对比）
+  - 装到 %LocalAppData%\Programs\<InstallDirName>，保住"exe 旁 data/ 便携数据"设计
+    （两个变体目录不同 → 各自独立索引库，A/B 对比互不污染）
   - Package/@InstallScope="perUser"：按用户安装，双击即装、无 UAC
     （勿改回手写 ALLUSERS=2+MSIINSTALLPERUSER=1 双模式：提升令牌下会被
      判 per-machine，注册落 HKLM，标准用户机器仍会要管理员）
-  - UpgradeCode 固定，MajorUpgrade 支持升级覆盖与降级拦截
+  - UpgradeCode 每变体固定不变，MajorUpgrade 支持升级覆盖与降级拦截
   - 卸载只删 MSI 自有文件，应用创建的 data/ 保留（索引跨升级不丢）
-  - 文件由 build-msi.bat 用 heat 收割 dist\FaceSorter 生成 FaceSorterFiles.wxs
+  - 文件由 build-msi.bat 用 heat 收割 dist\<ProductDir> 生成 FaceSorterFiles.wxs
 -->
 <Wix xmlns="http://schemas.microsoft.com/wix/2006/wi">
-  <Product Id="*" Name="FaceSorter" Language="2052" Codepage="936" Version="$(var.ProductVersion)"
+  <Product Id="*" Name="$(var.ProductName)" Language="2052" Codepage="936" Version="$(var.ProductVersion)"
            Manufacturer="FaceSorter"
-           UpgradeCode="b0a966f0-e08a-471b-968a-82bfcc114858">
+           UpgradeCode="$(var.UpgradeCode)">
     <Package InstallerVersion="200" Compressed="yes" InstallScope="perUser"
-             Description="FaceSorter 单机照片人物分类工具（零神经网络，完全离线）" />
-    <MajorUpgrade DowngradeErrorMessage="已安装更新版本的 FaceSorter，请先卸载后再安装旧版本。" />
+             Description="$(var.ProductName) 单机照片人物分类工具（完全离线）" />
+    <MajorUpgrade DowngradeErrorMessage="已安装更新版本的 $(var.ProductName)，请先卸载后再安装旧版本。" />
     <MediaTemplate EmbedCab="yes" />
 
     <Property Id="DISABLEADVTSHORTCUTS" Value="1" />
 
-    <Feature Id="Main" Title="FaceSorter" Level="1">
+    <Feature Id="Main" Title="$(var.ProductName)" Level="1">
       <ComponentGroupRef Id="FaceSorterFiles" />
       <ComponentRef Id="StartMenuShortcut" />
       <ComponentRef Id="DesktopShortcut" />
@@ -35,7 +38,7 @@
     <Directory Id="TARGETDIR" Name="SourceDir">
       <Directory Id="LocalAppDataFolder">
         <Directory Id="ProgramsDir" Name="Programs">
-          <Directory Id="INSTALLFOLDER" Name="FaceSorter" />
+          <Directory Id="INSTALLFOLDER" Name="$(var.InstallDirName)" />
         </Directory>
       </Directory>
       <Directory Id="ProgramMenuFolder" />
@@ -46,17 +49,17 @@
   <Fragment>
     <DirectoryRef Id="ProgramMenuFolder">
       <Component Id="StartMenuShortcut" Guid="40a9aaa5-f51f-4322-9078-5aef50d314d2">
-        <Shortcut Id="StartMenuFaceSorter" Name="FaceSorter"
-                  Target="[INSTALLFOLDER]FaceSorter.exe" WorkingDirectory="INSTALLFOLDER" />
-        <RegistryValue Root="HKCU" Key="Software\FaceSorter" Name="installed"
+        <Shortcut Id="StartMenuFaceSorter" Name="$(var.ProductName)"
+                  Target="[INSTALLFOLDER]$(var.ExeName)" WorkingDirectory="INSTALLFOLDER" />
+        <RegistryValue Root="HKCU" Key="Software\FaceSorter" Name="$(var.ExeName)StartMenu"
                        Type="integer" Value="1" KeyPath="yes" />
       </Component>
     </DirectoryRef>
     <DirectoryRef Id="DesktopFolder">
       <Component Id="DesktopShortcut" Guid="8e66b387-920d-483b-9cb4-0e05cb345578">
-        <Shortcut Id="DesktopFaceSorter" Name="FaceSorter"
-                  Target="[INSTALLFOLDER]FaceSorter.exe" WorkingDirectory="INSTALLFOLDER" />
-        <RegistryValue Root="HKCU" Key="Software\FaceSorter" Name="desktopShortcut"
+        <Shortcut Id="DesktopFaceSorter" Name="$(var.ProductName)"
+                  Target="[INSTALLFOLDER]$(var.ExeName)" WorkingDirectory="INSTALLFOLDER" />
+        <RegistryValue Root="HKCU" Key="Software\FaceSorter" Name="$(var.ExeName)Desktop"
                        Type="integer" Value="1" KeyPath="yes" />
       </Component>
     </DirectoryRef>

@@ -1,7 +1,12 @@
 # -*- mode: python ; coding: utf-8 -*-
+# A 版：YuNet+SFace（主线升级，UpgradeCode 沿用 b0a966f0-…）
 from PyInstaller.utils.hooks import collect_all
 
-datas = []
+datas = [
+    ('models/face_detection_yunet_2023mar.onnx', 'models'),
+    ('models/face_recognition_sface_2021dec.onnx', 'models'),
+    ('models/LICENSES.txt', 'models'),
+]
 binaries = []
 hiddenimports = []
 tmp_ret = collect_all('cv2')
