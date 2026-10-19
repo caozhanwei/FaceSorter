@@ -159,3 +159,25 @@ def test_run_scan_excludes_face_dir(tmp_path):
              tmp_path / "thumbs", tmp_path / "faces")
     paths = [r["path"] for r in store.photos_for_view("all")]
     assert not any("/faces/" in p for p in paths), paths
+
+
+def test_run_scan_incremental_new_photos_only(tmp_path):
+    # 增量扫描：已索引照片（mtime+size 未变）不重处理，只处理新增
+    store = Store(tmp_path / "t.db")
+    for i in range(3):
+        _write_img(tmp_path / f"p{i}.jpg", seed=i)
+    calls = []
+    class _Counting(FaceDetector):
+        def detect(self, img):
+            calls.append(1)
+            return []
+    det = _Counting()
+    run_scan([str(tmp_path)], store, det, None, tmp_path / "th")
+    assert len(calls) == 3
+    _write_img(tmp_path / "p_new.jpg", seed=9)
+    calls.clear()
+    run_scan([str(tmp_path)], store, det, None, tmp_path / "th")
+    assert len(calls) == 1, "新增 1 张应只处理 1 张"
+    calls.clear()
+    run_scan([str(tmp_path)], store, det, None, tmp_path / "th")
+    assert calls == [], "无变化不得重处理"
