@@ -25,6 +25,10 @@
       <ComponentRef Id="StartMenuShortcut" />
       <ComponentRef Id="DesktopShortcut" />
     </Feature>
+
+    <!-- 安装向导：欢迎 → 选择安装目录 → 确认安装（用户验收要求可选路径） -->
+    <Property Id="WIXUI_INSTALLDIR" Value="INSTALLFOLDER" />
+    <UIRef Id="WixUI_InstallDir" />
   </Product>
 
   <Fragment>

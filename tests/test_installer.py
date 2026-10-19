@@ -48,7 +48,7 @@ def msi_db():
 def test_msi_product_metadata(msi_db):
     _, db = msi_db
     assert _query_single(db, "SELECT `Value` FROM `Property` WHERE `Property` = 'ProductName'") == "FaceSorter"
-    assert _query_single(db, "SELECT `Value` FROM `Property` WHERE `Property` = 'ProductVersion'") == "1.0.1"  # 与 build-msi.bat PRODUCTVERSION 同步
+    assert _query_single(db, "SELECT `Value` FROM `Property` WHERE `Property` = 'ProductVersion'") == "1.0.2"  # 与 build-msi.bat PRODUCTVERSION 同步
     assert _query_single(db, "SELECT `Value` FROM `Property` WHERE `Property` = 'Manufacturer'") == "FaceSorter"
 
 
@@ -79,6 +79,22 @@ def test_msi_contains_app_exe(msi_db):
         names.append(rec.StringData(1).split("|")[-1])  # 8.3 短名|长名 取长名
     view.Close()
     assert "FaceSorter.exe" in names
+
+
+def test_msi_has_install_dir_dialog(msi_db):
+    # 用户验收：安装时须可选安装位置 —— WixUI_InstallDir 提供欢迎页+目录选择页
+    _, db = msi_db
+    view = db.OpenView("SELECT `Dialog` FROM `Dialog`")
+    view.Execute(None)
+    names = set()
+    while True:
+        rec = view.Fetch()
+        if rec is None:
+            break
+        names.add(rec.StringData(1))
+    view.Close()
+    assert "InstallDirDlg" in names
+    assert "WelcomeDlg" in names
 
 
 def test_admin_image_extraction():
