@@ -1,0 +1,9 @@
+.venv/
+__pycache__/
+data/
+dist/
+build/
+*.spec.bak
+tests/assets/*.jpg
+tests/assets/*.jpeg
+tests/assets/*.png
