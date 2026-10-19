@@ -187,7 +187,10 @@ class MainWindow(QMainWindow):
         self.btn_pause = QPushButton("暂停"); self.btn_cancel = QPushButton("取消")
         self.btn_settings = QPushButton("设置")
         self.btn_export = QPushButton("导出")
-        self.prog = QProgressBar(); self.prog.setMaximum(0)
+        self.prog = QProgressBar()
+        self.prog.setRange(0, 100); self.prog.setValue(0)
+        self.prog.setFormat("扫描中 %v/%m")
+        self.prog.hide()  # 空闲不显示；勿用 setMaximum(0)——那是永久忙碌动画
         self.btn_dir.clicked.connect(self._pick_roots)
         self.btn_scan.clicked.connect(self._start_scan)
         self.btn_pause.clicked.connect(self._toggle_pause)
@@ -220,19 +223,47 @@ class MainWindow(QMainWindow):
         det = self._detector_factory()
         self._worker = ScanWorker(self.roots, self.store, det, self.clusterer,
                                   self._thumb_dir())
-        self._worker.progress.connect(lambda i, n: (self.prog.setMaximum(n),
-                                                    self.prog.setValue(i)))
-        self._worker.done.connect(lambda: (self.refresh_view(), self.refresh_persons()))
-        self._worker.failed.connect(lambda m: self.statusBar().showMessage(f"扫描失败: {m}"))
+        self._worker.progress.connect(self.on_scan_progress)
+        self._worker.done.connect(self.on_scan_done)
+        self._worker.failed.connect(self.on_scan_failed)
+        self.btn_scan.setEnabled(False)
+        self.prog.setRange(0, 0)  # 清点目录阶段总数未知，短暂忙碌
+        self.prog.show()
+        self.statusBar().showMessage("开始扫描：正在清点目录…")
         self._worker.start()
+
+    def on_scan_progress(self, i, n):
+        self.prog.show()
+        self.prog.setMaximum(n)
+        self.prog.setValue(i)
+        self.statusBar().showMessage(f"扫描中 {i}/{n}")
+
+    def on_scan_done(self):
+        self.prog.hide()
+        self.prog.setRange(0, 100); self.prog.setValue(0)
+        self.btn_scan.setEnabled(True)
+        self._paused = False; self.btn_pause.setText("暂停")
+        self.refresh_view(); self.refresh_persons()
+        if getattr(self, "_worker", None) and self._worker._cancel.is_set():
+            self.statusBar().showMessage("已取消（已处理部分保留，下次续扫）")
+        else:
+            self.statusBar().showMessage(
+                f"扫描完成 · 共 {self.store.count_photos()} 张")
+
+    def on_scan_failed(self, msg):
+        self.prog.hide()
+        self.btn_scan.setEnabled(True)
+        self.statusBar().showMessage(f"扫描失败: {msg}")
 
     def _toggle_pause(self):
         if not self._worker:
             return
         if self._paused:
             self._worker.resume(); self._paused = False; self.btn_pause.setText("暂停")
+            self.statusBar().showMessage("继续扫描")
         else:
             self._worker.pause(); self._paused = True; self.btn_pause.setText("继续")
+            self.statusBar().showMessage("已暂停")
 
     def _open_settings(self):
         dlg = SettingsDialog(self._cfg, self)
