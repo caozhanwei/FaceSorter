@@ -1,4 +1,5 @@
-from PyQt6.QtCore import Qt, pyqtSignal, QUrl, QMimeData, QByteArray
+from PyQt6.QtCore import (Qt, pyqtSignal, QUrl, QMimeData, QByteArray,
+                          QObject, QRunnable, QThreadPool)
 from PyQt6.QtGui import (QStandardItemModel, QStandardItem, QPixmap,
                          QDesktopServices, QDrag)
 from PyQt6.QtWidgets import (QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
@@ -81,6 +82,31 @@ class FaceView(QListView):
         drag.exec(Qt.DropAction.CopyAction)
 
 
+class _ExportSignals(QObject):
+    done = pyqtSignal(int, str)    # (数量, 人物标签)
+    failed = pyqtSignal(str)
+
+
+class _ExportRunner(QRunnable):
+    def __init__(self, store, person_id, dest):
+        super().__init__()
+        self.store, self.person_id, self.dest = store, person_id, dest
+        self.signals = _ExportSignals()
+
+    def run(self):
+        from app.export import export_person
+        try:
+            label = ""
+            for r in self.store.persons_with_counts():
+                if r["id"] == self.person_id:
+                    label = r["name"] or f"人物 {r['id']}"
+                    break
+            copied = export_person(self.store, self.person_id, self.dest)
+            self.signals.done.emit(len(copied), label)
+        except Exception as e:
+            self.signals.failed.emit(str(e))
+
+
 class SettingsDialog(QDialog):
     def __init__(self, cfg, parent=None):
         super().__init__(parent); self.setWindowTitle("设置")
@@ -160,16 +186,19 @@ class MainWindow(QMainWindow):
         self.btn_dir = QPushButton("选择目录"); self.btn_scan = QPushButton("扫描")
         self.btn_pause = QPushButton("暂停"); self.btn_cancel = QPushButton("取消")
         self.btn_settings = QPushButton("设置")
+        self.btn_export = QPushButton("导出")
         self.prog = QProgressBar(); self.prog.setMaximum(0)
         self.btn_dir.clicked.connect(self._pick_roots)
         self.btn_scan.clicked.connect(self._start_scan)
         self.btn_pause.clicked.connect(self._toggle_pause)
         self.btn_cancel.clicked.connect(lambda: self._worker and self._worker.cancel())
         self.btn_settings.clicked.connect(self._open_settings)
+        self.btn_export.clicked.connect(self._export_person)
         top.insertWidget(0, self.btn_dir); top.insertWidget(1, self.btn_scan)
         top.insertWidget(2, self.btn_pause); top.insertWidget(3, self.btn_cancel)
         top.addWidget(self.prog)
         top.insertWidget(4, self.btn_settings)
+        top.insertWidget(5, self.btn_export)
         self.refresh_persons()
 
     # ---- 搜索：同时刷中区视图与左栏人物 ----
@@ -213,6 +242,38 @@ class MainWindow(QMainWindow):
             if self._clusterer_factory:
                 self.clusterer = self._clusterer_factory()
             self.refresh_view(); self.refresh_persons()
+
+    # ---- 导出 ----
+    def _export_person(self):
+        rows = persons_display(self.store.persons_with_counts())
+        if not rows:
+            QMessageBox.information(self, "导出", "还没有任何人物可导出。")
+            return
+        names = [d["label"] for d in rows]
+        choice, ok = QInputDialog.getItem(self, "导出人物", "选择人物:", names, 0, False)
+        if not ok:
+            return
+        pid = rows[names.index(choice)]["id"]
+        dest = QFileDialog.getExistingDirectory(self, "选择导出目标目录")
+        if not dest:
+            return
+        self.btn_export.setEnabled(False)
+        self.statusBar().showMessage("正在导出…")
+        self._export_runner = _ExportRunner(self.store, pid, dest)
+        self._export_runner.signals.done.connect(self._export_done)
+        self._export_runner.signals.failed.connect(self._export_failed)
+        QThreadPool.globalInstance().start(self._export_runner)
+
+    def _export_done(self, n, label):
+        self.btn_export.setEnabled(True)
+        self.statusBar().showMessage("就绪")
+        QMessageBox.information(self, "导出完成",
+                                f"已为「{label}」导出 {n} 张照片副本（原文件未动）。")
+
+    def _export_failed(self, msg):
+        self.btn_export.setEnabled(True)
+        self.statusBar().showMessage("就绪")
+        QMessageBox.warning(self, "导出失败", msg)
 
     # ---- 人物列表 ----
     def refresh_persons(self):
