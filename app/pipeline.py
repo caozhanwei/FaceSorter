@@ -68,10 +68,18 @@ def process_one(path, store, detector, clusterer, thumb_dir: Path):
 def run_scan(roots, store, detector, clusterer, thumb_dir,
              progress=None, cancel=None):
     thumb_prefix = Path(thumb_dir).as_posix().rstrip("/") + "/"
+    known_before = set(store.known_fingerprints().keys())
     todo = [p for p in scan_roots(roots, store) if not p.startswith(thumb_prefix)]
     total = len(todo)
     for i, path in enumerate(todo):
         if cancel is not None and cancel.is_set():
+            # 取消：撤销本次新入库但未处理的行，保持"已处理才算入索引"，
+            # 下次扫描这些照片仍会进入 todo
+            fresh = [p for p in todo[i:] if p not in known_before]
+            if fresh:
+                store.con.executemany("DELETE FROM photos WHERE path=?",
+                                      [(p,) for p in fresh])
+                store.con.commit()
             return
         try:
             process_one(path, store, detector, clusterer, Path(thumb_dir))

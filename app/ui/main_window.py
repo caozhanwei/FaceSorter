@@ -1,9 +1,12 @@
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QStandardItemModel, QStandardItem
 from PyQt6.QtWidgets import (QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
-    QComboBox, QLineEdit, QListView, QLabel, QStatusBar)
+    QComboBox, QLineEdit, QListView, QLabel, QStatusBar,
+    QPushButton, QProgressBar, QFileDialog)
 from app.settings import load_settings
+from app.paths import data_dir
 from app.ui.thumb_provider import ThumbProvider
+from app.ui.scan_progress import ScanWorker
 
 VIEW_ALL, VIEW_WITH, VIEW_NO, VIEW_BAD = "全部照片", "有人的", "无人的", "问题文件"
 
@@ -37,6 +40,50 @@ class MainWindow(QMainWindow):
         self.setCentralWidget(wrap)
         self.statusBar().showMessage("就绪")
         self._detector = None
+        self.roots = []
+        self._worker = None
+        self._paused = False
+        self.btn_dir = QPushButton("选择目录"); self.btn_scan = QPushButton("扫描")
+        self.btn_pause = QPushButton("暂停"); self.btn_cancel = QPushButton("取消")
+        self.prog = QProgressBar(); self.prog.setMaximum(0)
+        self.btn_dir.clicked.connect(self._pick_roots)
+        self.btn_scan.clicked.connect(self._start_scan)
+        self.btn_pause.clicked.connect(self._toggle_pause)
+        self.btn_cancel.clicked.connect(lambda: self._worker and self._worker.cancel())
+        top.insertWidget(0, self.btn_dir); top.insertWidget(1, self.btn_scan)
+        top.insertWidget(2, self.btn_pause); top.insertWidget(3, self.btn_cancel)
+        top.addWidget(self.prog)
+
+    def _thumb_dir(self):
+        return self._cfg.get("thumb_dir") or (data_dir() / "thumbs")
+
+    def _pick_roots(self):
+        d = QFileDialog.getExistingDirectory(self, "选择照片目录")
+        if d:
+            self.roots = [d]; self.statusBar().showMessage(f"目录: {d}")
+
+    def _start_scan(self):
+        if not self.roots or getattr(self, "_worker", None) and self._worker.isRunning():
+            return
+        det = self._detector_factory()
+        self._worker = ScanWorker(self.roots, self.store, det, self.clusterer,
+                                  self._thumb_dir())
+        self._worker.progress.connect(lambda i, n: (self.prog.setMaximum(n),
+                                                    self.prog.setValue(i)))
+        self._worker.done.connect(lambda: (self.refresh_view(), self.refresh_persons()))
+        self._worker.failed.connect(lambda m: self.statusBar().showMessage(f"扫描失败: {m}"))
+        self._worker.start()
+
+    def _toggle_pause(self):
+        if not self._worker:
+            return
+        if self._paused:
+            self._worker.resume(); self._paused = False; self.btn_pause.setText("暂停")
+        else:
+            self._worker.pause(); self._paused = True; self.btn_pause.setText("继续")
+
+    def refresh_persons(self):
+        self.refresh_view()  # Task 10 替换为人物列表刷新
 
     def refresh_view(self):
         self.grid_model.clear()
