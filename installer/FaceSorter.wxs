@@ -1,0 +1,57 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  FaceSorter per-user MSI（免管理员一键安装）
+  - 装到 %LocalAppData%\Programs\FaceSorter，保住"exe 旁 data/ 便携数据"设计
+  - ALLUSERS=2 + MSIINSTALLPERUSER=1：MSI 5.0 按用户安装，双击即装、无 UAC
+  - UpgradeCode 固定，MajorUpgrade 支持升级覆盖与降级拦截
+  - 文件由 build-msi.bat 用 heat 收割 dist\FaceSorter 生成 FaceSorterFiles.wxs
+-->
+<Wix xmlns="http://schemas.microsoft.com/wix/2006/wi">
+  <Product Id="*" Name="FaceSorter" Language="2052" Codepage="936" Version="$(var.ProductVersion)"
+           Manufacturer="FaceSorter"
+           UpgradeCode="b0a966f0-e08a-471b-968a-82bfcc114858">
+    <Package InstallerVersion="200" Compressed="yes"
+             Description="FaceSorter 单机照片人物分类工具（零神经网络，完全离线）" />
+    <MajorUpgrade DowngradeErrorMessage="已安装更新版本的 FaceSorter，请先卸载后再安装旧版本。" />
+    <MediaTemplate EmbedCab="yes" />
+
+    <Property Id="ALLUSERS" Value="2" />
+    <Property Id="MSIINSTALLPERUSER" Value="1" />
+    <Property Id="DISABLEADVTSHORTCUTS" Value="1" />
+
+    <Feature Id="Main" Title="FaceSorter" Level="1">
+      <ComponentGroupRef Id="FaceSorterFiles" />
+      <ComponentRef Id="StartMenuShortcut" />
+      <ComponentRef Id="DesktopShortcut" />
+    </Feature>
+  </Product>
+
+  <Fragment>
+    <Directory Id="TARGETDIR" Name="SourceDir">
+      <Directory Id="LocalAppDataFolder">
+        <Directory Id="INSTALLFOLDER" Name="FaceSorter" />
+      </Directory>
+      <Directory Id="ProgramMenuFolder" />
+      <Directory Id="DesktopFolder" />
+    </Directory>
+  </Fragment>
+
+  <Fragment>
+    <DirectoryRef Id="ProgramMenuFolder">
+      <Component Id="StartMenuShortcut" Guid="40a9aaa5-f51f-4322-9078-5aef50d314d2">
+        <Shortcut Id="StartMenuFaceSorter" Name="FaceSorter"
+                  Target="[INSTALLFOLDER]FaceSorter.exe" WorkingDirectory="INSTALLFOLDER" />
+        <RegistryValue Root="HKCU" Key="Software\FaceSorter" Name="installed"
+                       Type="integer" Value="1" KeyPath="yes" />
+      </Component>
+    </DirectoryRef>
+    <DirectoryRef Id="DesktopFolder">
+      <Component Id="DesktopShortcut" Guid="8e66b387-920d-483b-9cb4-0e05cb345578">
+        <Shortcut Id="DesktopFaceSorter" Name="FaceSorter"
+                  Target="[INSTALLFOLDER]FaceSorter.exe" WorkingDirectory="INSTALLFOLDER" />
+        <RegistryValue Root="HKCU" Key="Software\FaceSorter" Name="desktopShortcut"
+                       Type="integer" Value="1" KeyPath="yes" />
+      </Component>
+    </DirectoryRef>
+  </Fragment>
+</Wix>
