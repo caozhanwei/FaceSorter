@@ -1,0 +1,17 @@
+模型文件许可证（打包分发依据）
+================================
+
+face_detection_yunet_2023mar.onnx
+  来源: opencv/opencv_zoo models/face_detection_yunet
+  许可: MIT License (https://github.com/opencv/opencv_zoo/blob/main/models/face_detection_yunet/README.md)
+
+face_recognition_sface_2021dec.onnx
+  来源: opencv/opencv_zoo models/face_recognition_sface
+  许可: Apache License 2.0 (https://github.com/opencv/opencv_zoo/blob/main/models/face_recognition_sface/README.md)
+
+det_10g.onnx (SCRFD-10GF 检测), w600k_r50.onnx (ArcFace R50 识别)
+  来源: deepinsight/insightface releases v0.7 buffalo_l
+  许可: 模型权重仅限非商业研究用途（代码 MIT）
+        https://github.com/deepinsight/insightface
+  FaceSorter 为个人照片整理工具（个人使用），符合非商业限制；
+  如需商用需向 InsightFace 购买模型授权。

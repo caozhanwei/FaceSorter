@@ -1,4 +1,4 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 import cv2, numpy as np
 
 @dataclass
@@ -6,6 +6,9 @@ class FaceBox:
     x: int; y: int; w: int; h: int
     quality: float
     clusturable: bool
+    # 深度引擎专用：检测器原始输出行（YuNet 15维 / SCRFD 框+关键点），embed 对齐要用
+    row: np.ndarray = None
+    score: float = 0.0
 
 def expand_box(x, y, w, h, img_w, img_h, pad=0.2):
     dx, dy = int(w * pad), int(h * pad)

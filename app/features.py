@@ -56,6 +56,27 @@ def hellinger(a, b):
     bc = float(np.dot(sa / na, sb / nb))
     return float(np.sqrt(max(0.0, 1.0 - bc)))
 
+
+def cosine_distance(a, b):
+    # SFace(128d)/ArcFace(512d) 嵌入：1 - cos ∈ [0,2]，同人应 < ~0.4
+    na, nb = np.linalg.norm(a), np.linalg.norm(b)
+    if na == 0.0 or nb == 0.0:
+        return 2.0
+    cos = float(np.dot(a / na, b / nb))
+    return float(np.clip(1.0 - cos, 0.0, 2.0))
+
+
+EMBED_DIMS = (128, 512)  # 深度嵌入维度（SFace=128, ArcFace=512）；LBP 特征为 5540
+
+
+def distance(a, b):
+    # 按特征长度派发：深度嵌入走余弦，旧 LBP 走 hellinger；长度不匹配视为最远
+    if len(a) != len(b):
+        return 2.0
+    if len(a) in EMBED_DIMS:
+        return cosine_distance(a, b)
+    return hellinger(a, b)
+
 def parse_time(s):
     if not s:
         return None
