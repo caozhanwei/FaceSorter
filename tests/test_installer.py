@@ -53,10 +53,9 @@ def test_msi_product_metadata(msi_db):
 
 
 def test_msi_is_per_user_no_admin(msi_db):
-    # ALLUSERS=2 + MSIINSTALLPERUSER=1 = MSI 5.0 双模式按用户安装，免管理员
+    # InstallScope="perUser"：ALLUSERS 空/缺 = 按用户安装，注册 HKCU，免管理员
     _, db = msi_db
-    assert _query_single(db, "SELECT `Value` FROM `Property` WHERE `Property` = 'MSIINSTALLPERUSER'") == "1"
-    assert _query_single(db, "SELECT `Value` FROM `Property` WHERE `Property` = 'ALLUSERS'") == "2"
+    assert _query_single(db, "SELECT `Value` FROM `Property` WHERE `Property` = 'ALLUSERS'") in ("", None)
 
 
 def test_msi_upgrade_code_stable(msi_db):

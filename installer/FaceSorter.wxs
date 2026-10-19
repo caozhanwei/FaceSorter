@@ -10,13 +10,11 @@
   <Product Id="*" Name="FaceSorter" Language="2052" Codepage="936" Version="$(var.ProductVersion)"
            Manufacturer="FaceSorter"
            UpgradeCode="b0a966f0-e08a-471b-968a-82bfcc114858">
-    <Package InstallerVersion="200" Compressed="yes"
+    <Package InstallerVersion="200" Compressed="yes" InstallScope="perUser"
              Description="FaceSorter 单机照片人物分类工具（零神经网络，完全离线）" />
     <MajorUpgrade DowngradeErrorMessage="已安装更新版本的 FaceSorter，请先卸载后再安装旧版本。" />
     <MediaTemplate EmbedCab="yes" />
 
-    <Property Id="ALLUSERS" Value="2" />
-    <Property Id="MSIINSTALLPERUSER" Value="1" />
     <Property Id="DISABLEADVTSHORTCUTS" Value="1" />
 
     <Feature Id="Main" Title="FaceSorter" Level="1">
@@ -29,7 +27,9 @@
   <Fragment>
     <Directory Id="TARGETDIR" Name="SourceDir">
       <Directory Id="LocalAppDataFolder">
-        <Directory Id="INSTALLFOLDER" Name="FaceSorter" />
+        <Directory Id="ProgramsDir" Name="Programs">
+          <Directory Id="INSTALLFOLDER" Name="FaceSorter" />
+        </Directory>
       </Directory>
       <Directory Id="ProgramMenuFolder" />
       <Directory Id="DesktopFolder" />

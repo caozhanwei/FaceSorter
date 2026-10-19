@@ -7,3 +7,4 @@ build/
 tests/assets/*.jpg
 tests/assets/*.jpeg
 tests/assets/*.png
+installer/obj/
