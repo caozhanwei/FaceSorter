@@ -2,8 +2,11 @@
 <!--
   FaceSorter per-user MSI（免管理员一键安装）
   - 装到 %LocalAppData%\Programs\FaceSorter，保住"exe 旁 data/ 便携数据"设计
-  - ALLUSERS=2 + MSIINSTALLPERUSER=1：MSI 5.0 按用户安装，双击即装、无 UAC
+  - Package/@InstallScope="perUser"：按用户安装，双击即装、无 UAC
+    （勿改回手写 ALLUSERS=2+MSIINSTALLPERUSER=1 双模式：提升令牌下会被
+     判 per-machine，注册落 HKLM，标准用户机器仍会要管理员）
   - UpgradeCode 固定，MajorUpgrade 支持升级覆盖与降级拦截
+  - 卸载只删 MSI 自有文件，应用创建的 data/ 保留（索引跨升级不丢）
   - 文件由 build-msi.bat 用 heat 收割 dist\FaceSorter 生成 FaceSorterFiles.wxs
 -->
 <Wix xmlns="http://schemas.microsoft.com/wix/2006/wi">
