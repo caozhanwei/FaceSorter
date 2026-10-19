@@ -1,0 +1,77 @@
+import os, threading, cv2, numpy as np, pytest
+from pathlib import Path
+from app.store import Store
+from app.detector import FaceDetector
+from app.cluster import Clusterer
+from app.pipeline import imread_unicode, imwrite_unicode, read_exif_taken_at, \
+    make_thumb, process_one, run_scan
+
+ASSETS = os.path.join(os.path.dirname(__file__), "assets")
+
+def _write_img(path: Path, h=120, w=160, seed=0):
+    rng = np.random.default_rng(seed)
+    cv2.imencode(".jpg", (rng.random((h, w)) * 255).astype(np.uint8))[1].tofile(str(path))
+
+def test_unicode_roundtrip(tmp_path):
+    p = tmp_path / "中文 目录" / "照片 1.jpg"
+    p.parent.mkdir(parents=True)
+    _write_img(p)
+    img = imread_unicode(str(p))
+    assert img is not None and img.shape[:2] == (120, 160)
+    assert imwrite_unicode(str(tmp_path / "缩 略.jpg"), img)
+    assert (tmp_path / "缩 略.jpg").exists()
+
+def test_thumb_size(tmp_path):
+    img = np.zeros((1000, 500), np.uint8)
+    make_thumb(img, tmp_path / "t.jpg")
+    t = cv2.imdecode(np.fromfile(str(tmp_path / "t.jpg"), dtype=np.uint8), cv2.IMREAD_GRAYSCALE)
+    assert max(t.shape) <= 256
+
+def test_exif_missing_ok(tmp_path):
+    p = tmp_path / "x.jpg"; _write_img(p)
+    assert read_exif_taken_at(str(p)) is None
+
+def test_process_one_bad_file(tmp_path):
+    store = Store(tmp_path / "t.db")
+    bad = tmp_path / "bad.jpg"; bad.write_bytes(b"not an image")
+    process_one(str(bad), store, FaceDetector(), None, tmp_path / "thumbs")
+    assert [r["path"] for r in store.photos_for_view("bad")] == [str(bad).replace("\\", "/")]
+
+@pytest.mark.skipif(not os.path.exists(os.path.join(ASSETS, "face1.jpg")),
+                    reason="需要 tests/assets/face1.jpg")
+def test_process_one_real_face(tmp_path):
+    store = Store(tmp_path / "t.db")
+    det = FaceDetector(); cl = Clusterer(store)
+    process_one(os.path.join(ASSETS, "face1.jpg").replace("\\", "/"),
+                store, det, cl, tmp_path / "thumbs")
+    assert store.count_photos() == 1
+    rows = store.con.execute("SELECT * FROM faces").fetchall()
+    assert len(rows) >= 1 and rows[0]["person_id"] is not None
+    photo = store.photos_for_view("with_faces")[0]
+    assert photo["thumb_path"] and os.path.exists(photo["thumb_path"])
+    assert photo["has_face"] == 1
+
+def test_run_scan_progress_and_cancel(tmp_path):
+    store = Store(tmp_path / "t.db")
+    for i in range(3):
+        _write_img(tmp_path / f"p{i}.jpg", seed=i)
+    seen = []
+    cancel = threading.Event()
+    run_scan([str(tmp_path)], store, FaceDetector(), None, tmp_path / "th",
+             progress=lambda i, n: seen.append((i, n)), cancel=cancel)
+    assert seen[-1][0] == 3 and store.count_photos() == 3
+    # 再扫一遍：无新文件,progress 不再推进
+    seen.clear()
+    run_scan([str(tmp_path)], store, FaceDetector(), None, tmp_path / "th",
+             progress=lambda i, n: seen.append((i, n)), cancel=None)
+    assert seen == []
+
+def test_run_scan_disk_full_raises(tmp_path, monkeypatch):
+    store = Store(tmp_path / "t.db")
+    _write_img(tmp_path / "p.jpg")
+    import app.pipeline as pl
+    def _boom(img, thumb_path):
+        raise OSError(28, "No space left on device")
+    monkeypatch.setattr(pl, "make_thumb", _boom)
+    with pytest.raises(OSError):
+        run_scan([str(tmp_path)], store, FaceDetector(), None, tmp_path / "th")
