@@ -1,7 +1,7 @@
-from PyQt6.QtCore import (Qt, pyqtSignal, QUrl, QMimeData, QByteArray,
+from PyQt6.QtCore import (Qt, pyqtSignal, QMimeData, QByteArray,
                           QObject, QRunnable, QThreadPool)
 from PyQt6.QtGui import (QStandardItemModel, QStandardItem, QPixmap, QImage, QIcon,
-                         QDesktopServices, QDrag, QAction, QKeySequence, QShortcut)
+                         QDrag, QAction, QKeySequence, QShortcut)
 from PyQt6.QtWidgets import (QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QComboBox, QLineEdit, QListView, QLabel, QStatusBar, QListWidget,
     QListWidgetItem, QMenu, QInputDialog, QDialog, QFormLayout, QDoubleSpinBox,
@@ -12,11 +12,12 @@ from app.paths import data_dir
 from app.person_face import average_face
 from app.ui.thumb_provider import ThumbProvider
 from app.ui.scan_progress import ScanWorker
+from app.ui.photo_viewer import PhotoViewer
 from app.ui.persons_model import (MIME_FACE_IDS, persons_display,
                                   encode_face_ids, decode_face_ids)
 
 VIEW_ALL, VIEW_WITH, VIEW_NO, VIEW_BAD = "全部照片", "有人的", "无人的", "问题文件"
-SPECIAL_VIEWS = ["未归类脸", "全部照片", "有人的", "无人的", "问题文件"]
+SPECIAL_VIEWS = ["全部脸", "未归类脸", "全部照片", "有人的", "无人的", "问题文件"]
 
 PID_ROLE = Qt.ItemDataRole.UserRole + 1
 
@@ -518,10 +519,12 @@ class MainWindow(QMainWindow):
         self.statusBar().showMessage("脸部管理：拖拽到左侧人物或右键调整")
 
     def _current_person_view(self):
-        """返回 (mode, person_id)：mode ∈ photo_person/face_person/face_unassigned"""
+        """返回 (mode, person_id)：mode ∈ photo_person/face_person/face_unassigned/face_all"""
         item = self.persons_list.currentItem()
         if item is None:
             return None, None
+        if item.text() == "全部脸":
+            return "face_all", None
         if item.text() == "未归类脸":
             return "face_unassigned", None
         pid = item.data(PID_ROLE)
@@ -537,6 +540,8 @@ class MainWindow(QMainWindow):
             return self.store.faces_of_person(pid)
         if mode == "face_unassigned":
             return self.store.faces_without_person()
+        if mode == "face_all":
+            return self.store.all_faces()
         return []
 
     # ---- 中区 ----
@@ -669,11 +674,37 @@ class MainWindow(QMainWindow):
         self.refresh_persons(); self.refresh_view()
 
     def _open_item(self, index):
+        """双击：全部脸→进该人物照片堆；其余→内置浏览器（当前人物绿框）。"""
         data = index.data(Qt.ItemDataRole.UserRole)
-        if isinstance(data, tuple) and data[0] == "face":
-            data = self.store.photo_of_face(data[1])["path"]
-        if data:
-            QDesktopServices.openUrl(QUrl.fromLocalFile(data))  # 双击看整照片
+        mode, pid = self._current_person_view()
+        if mode == "face_all" and isinstance(data, tuple) and data[0] == "face":
+            row = self.store.face_by_id(data[1])
+            if row is not None and row["person_id"]:
+                for i in range(self.persons_list.count()):
+                    if self.persons_list.item(i).data(PID_ROLE) == row["person_id"]:
+                        self.persons_list.setCurrentRow(i)
+                        self._person_clicked(self.persons_list.item(i))
+                        return
+        cur = data
+        if isinstance(cur, tuple) and cur[0] == "face":
+            photo = self.store.photo_of_face(cur[1])
+            cur = photo["path"] if photo else None
+        paths = self._grid_paths()
+        if cur and cur in paths:
+            PhotoViewer(paths, paths.index(cur), self.store,
+                        highlight_pid=pid, parent=self).exec()
+
+    def _grid_paths(self):
+        """当前格子的照片路径序列：脸格子解析成所属照片，按序去重。"""
+        paths = []
+        for r in range(self.grid_model.rowCount()):
+            d = self.grid_model.item(r).data(Qt.ItemDataRole.UserRole)
+            if isinstance(d, tuple) and d[0] == "face":
+                photo = self.store.photo_of_face(d[1])
+                d = photo["path"] if photo else None
+            if d and d not in paths:
+                paths.append(d)
+        return paths
 
     # ---- 脸部右键菜单 ----
     def contextMenuEvent(self, e):

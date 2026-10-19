@@ -148,6 +148,17 @@ class Store:
             f"SELECT {self._FACE_COLS} FROM faces f JOIN photos p ON p.id=f.photo_id"
             " WHERE f.person_id IS NULL ORDER BY p.path").fetchall()
 
+    def all_faces(self):
+        """全库脸列表（质量降序）：「全部脸」视图用。"""
+        return self.con.execute(
+            f"SELECT {self._FACE_COLS} FROM faces f JOIN photos p ON p.id=f.photo_id"
+            " WHERE p.status='ok' ORDER BY f.quality DESC").fetchall()
+
+    def face_by_id(self, face_id):
+        return self.con.execute(
+            "SELECT id, photo_id, person_id FROM faces WHERE id=?",
+            (face_id,)).fetchone()
+
     def feature_by_face(self, face_id):
         b = self.con.execute(
             "SELECT feature FROM faces WHERE id=?", (face_id,)).fetchone()["feature"]
@@ -163,6 +174,17 @@ class Store:
             "SELECT DISTINCT person_id FROM faces WHERE photo_id=? AND person_id IS NOT NULL",
             (photo_id,)).fetchall()
         return {r["person_id"] for r in rows}
+
+    def photo_by_path(self, path):
+        return self.con.execute(
+            "SELECT * FROM photos WHERE path=?", (path,)).fetchone()
+
+    def faces_of_photo(self, photo_id):
+        """一张照片里的所有脸（含人物名）：图片浏览器框选用。"""
+        return self.con.execute(
+            "SELECT f.id, f.x, f.y, f.w, f.h, f.person_id, p.name"
+            " FROM faces f LEFT JOIN persons p ON p.id=f.person_id"
+            " WHERE f.photo_id=? ORDER BY f.id", (photo_id,)).fetchall()
 
     def create_person(self, name=None):
         cur = self._exec("INSERT INTO persons(name) VALUES(?)", (name,))

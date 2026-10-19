@@ -132,3 +132,26 @@ def test_face_crops_of_person_quality_order(tmp_path):
         store.set_face_person(f, p, "auto")
     ids = [r["id"] for r in store.face_crops_of_person(p)]
     assert ids == [f_hi, f_mid, f_low]
+
+
+def test_all_faces_quality_desc_excludes_missing(tmp_path):
+    # 全部脸列表：质量（清晰度）降序；缺失照片的脸不列
+    store = Store(tmp_path / "t.db")
+    ph = store.upsert_photo("a.jpg", 1.0, 1)
+    store.add_face(ph, 0, 0, 10, 10, 50.0, None)
+    store.add_face(ph, 20, 0, 10, 10, 90.0, None)
+    ph2 = store.upsert_photo("b.jpg", 1.0, 1)
+    store.update_photo_meta(ph2, status="missing")
+    store.add_face(ph2, 0, 0, 5, 5, 99.0, None)
+    rows = store.all_faces()
+    assert [r["quality"] for r in rows] == [90.0, 50.0]
+    assert all(r["path"] == "a.jpg" for r in rows)
+
+def test_face_by_id_person(tmp_path):
+    store = Store(tmp_path / "t.db")
+    ph = store.upsert_photo("a.jpg", 1.0, 1)
+    f1 = store.add_face(ph, 0, 0, 10, 10, 1.0, None)
+    p = store.create_person("X")
+    store.set_face_person(f1, p, "auto")
+    assert store.face_by_id(f1)["person_id"] == p
+    assert store.face_by_id(99999) is None
