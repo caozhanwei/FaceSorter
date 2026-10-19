@@ -4,7 +4,7 @@ rem 用法: build-msi.bat [yunet^|arcface]（默认 yunet = 主线 FaceSorter.ms
 rem 依赖：先跑 build.bat 产出对应 dist 目录；WiX 3.14 在 %WIX%
 setlocal
 set WIX=G:\work\tools\wix314\tools
-set PRODUCTVERSION=1.1.0
+set PRODUCTVERSION=1.2.0
 set OBJ=installer\obj
 
 if /i "%1"=="arcface" (

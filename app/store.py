@@ -31,7 +31,7 @@ def unpack_feature(b: bytes) -> np.ndarray:
 class StoreCorrupted(Exception):
     pass
 
-FEATURE_VERSION = 2  # 1=LBP直方图(1.0.x) 2=深度嵌入（SFace/ArcFace）
+FEATURE_VERSION = 3  # 1=LBP(1.0.x) 2=深度嵌入(1.1) 3=扫描期对齐裁剪(1.2)
 
 
 class Store:
