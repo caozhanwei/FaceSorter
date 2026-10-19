@@ -61,6 +61,6 @@ def test_pause_resume_updates_status(win):
     win._worker = types.SimpleNamespace(pause=lambda: None, resume=lambda: None)
     win._toggle_pause()
     assert "暂停" in win.statusBar().currentMessage()
-    assert win.btn_pause.text() == "继续"
+    assert win.act_pause.text() == "继续"
     win._toggle_pause()
-    assert win.btn_pause.text() == "暂停"
+    assert win.act_pause.text() == "暂停"

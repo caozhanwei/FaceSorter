@@ -22,3 +22,10 @@ def load_settings(path: Path, engine: str = None) -> dict:
 
 def save_settings(path: Path, cfg: dict):
     Path(path).write_text(json.dumps(cfg, ensure_ascii=False, indent=2), "utf-8")
+
+
+# 这些键影响已有分配结果：改了必须重排，而不是只影响以后的扫描
+RECLUSTER_KEYS = ("threshold", "time_boost", "time_window")
+
+def need_recluster(old: dict, new: dict) -> bool:
+    return any(old.get(k) != new.get(k) for k in RECLUSTER_KEYS)

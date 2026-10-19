@@ -1,13 +1,13 @@
 from PyQt6.QtCore import (Qt, pyqtSignal, QUrl, QMimeData, QByteArray,
                           QObject, QRunnable, QThreadPool)
 from PyQt6.QtGui import (QStandardItemModel, QStandardItem, QPixmap, QImage, QIcon,
-                         QDesktopServices, QDrag)
+                         QDesktopServices, QDrag, QAction, QKeySequence, QShortcut)
 from PyQt6.QtWidgets import (QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QComboBox, QLineEdit, QListView, QLabel, QStatusBar, QListWidget,
     QListWidgetItem, QMenu, QInputDialog, QDialog, QFormLayout, QDoubleSpinBox,
     QSpinBox, QDialogButtonBox, QMessageBox, QPushButton, QProgressBar,
-    QFileDialog, QAbstractItemView)
-from app.settings import load_settings, save_settings
+    QFileDialog, QAbstractItemView, QToolBar, QStyle)
+from app.settings import load_settings, save_settings, need_recluster
 from app.paths import data_dir
 from app.person_face import average_face
 from app.ui.thumb_provider import ThumbProvider
@@ -118,6 +118,26 @@ class _AvgFaceRunner(QRunnable):
         self.signals.ready.emit(self.pid, qimg)
 
 
+class _ReclusterSignals(QObject):
+    done = pyqtSignal()
+    failed = pyqtSignal(str)
+
+
+class _ReclusterRunner(QRunnable):
+    """后台按（新）阈值重排全部自动分配的脸。"""
+
+    def __init__(self, clusterer, signals):
+        super().__init__()
+        self.clusterer, self.signals = clusterer, signals
+
+    def run(self):
+        try:
+            self.clusterer.recluster_auto()
+            self.signals.done.emit()
+        except Exception as e:
+            self.signals.failed.emit(str(e))
+
+
 class _ExportRunner(QRunnable):
     def __init__(self, store, person_id, dest):
         super().__init__()
@@ -213,32 +233,92 @@ class MainWindow(QMainWindow):
         self.setCentralWidget(wrap)
         self.statusBar().showMessage("就绪")
         self._detector = None
-        self.roots = []
+        self.roots = list(self._cfg.get("last_roots") or [])
         self._worker = None
         self._paused = False
         self._face_mgr_pid = None            # 「管理此人的脸」模式
         self._avg_cache = {}                 # pid -> 平均脸 QIcon
         self._avg_sig = _AvgFaceSignals()
         self._avg_sig.ready.connect(self._on_avg_face)
-        self.btn_dir = QPushButton("选择目录"); self.btn_scan = QPushButton("扫描")
-        self.btn_pause = QPushButton("暂停"); self.btn_cancel = QPushButton("取消")
-        self.btn_settings = QPushButton("设置")
-        self.btn_export = QPushButton("导出")
+        self._reclustering = False
+        self._recluster_sig = _ReclusterSignals()
+        self._recluster_sig.done.connect(lambda: self._recluster_done())
+        self._recluster_sig.failed.connect(self._recluster_failed)
+
+        # ---- 工具栏（桌面工具标准：图标+文字+快捷键） ----
+        st = self.style()
+        tb = QToolBar("主工具栏")
+        tb.setMovable(False)
+        tb.setIconSize(tb.iconSize() * 0.9)
+        self.addToolBar(tb)
+        self.act_dir = QAction(st.standardIcon(QStyle.StandardPixmap.SP_DirOpenIcon),
+                               "选择目录(&O)")
+        self.act_dir.setShortcut(QKeySequence("Ctrl+O"))
+        self.act_scan = QAction(st.standardIcon(QStyle.StandardPixmap.SP_BrowserReload),
+                                "扫描(&S)")
+        self.act_scan.setShortcut(QKeySequence("F5"))
+        self.act_pause = QAction(st.standardIcon(QStyle.StandardPixmap.SP_MediaPause),
+                                 "暂停")
+        self.act_cancel = QAction(st.standardIcon(QStyle.StandardPixmap.SP_DialogCancelButton),
+                                  "取消")
+        self.act_settings = QAction(st.standardIcon(QStyle.StandardPixmap.SP_FileDialogInfoView),
+                                    "设置(&P)")
+        self.act_settings.setShortcut(QKeySequence("Ctrl+,"))
+        self.act_export = QAction(st.standardIcon(QStyle.StandardPixmap.SP_DriveHDIcon),
+                                  "导出(&E)")
+        self.act_export.setShortcut(QKeySequence("Ctrl+E"))
+        self.act_about = QAction(st.standardIcon(QStyle.StandardPixmap.SP_MessageBoxInformation),
+                                 "关于")
+        self.act_dir.triggered.connect(self._pick_roots)
+        self.act_scan.triggered.connect(self._start_scan)
+        self.act_pause.triggered.connect(self._toggle_pause)
+        self.act_cancel.triggered.connect(lambda: self._worker and self._worker.cancel())
+        self.act_settings.triggered.connect(self._open_settings)
+        self.act_export.triggered.connect(self._export_person)
+        self.act_about.triggered.connect(self._about)
+        for a in (self.act_dir, self.act_scan, self.act_pause, self.act_cancel):
+            tb.addAction(a)
+        tb.addSeparator()
+        for a in (self.act_settings, self.act_export):
+            tb.addAction(a)
+        tb.addSeparator()
+        tb.addAction(self.act_about)
+
+        # 状态栏右侧常驻：进度条 + 计数
         self.prog = QProgressBar()
         self.prog.setRange(0, 100); self.prog.setValue(0)
         self.prog.setFormat("扫描中 %v/%m")
         self.prog.hide()  # 空闲不显示；勿用 setMaximum(0)——那是永久忙碌动画
-        self.btn_dir.clicked.connect(self._pick_roots)
-        self.btn_scan.clicked.connect(self._start_scan)
-        self.btn_pause.clicked.connect(self._toggle_pause)
-        self.btn_cancel.clicked.connect(lambda: self._worker and self._worker.cancel())
-        self.btn_settings.clicked.connect(self._open_settings)
-        self.btn_export.clicked.connect(self._export_person)
-        top.insertWidget(0, self.btn_dir); top.insertWidget(1, self.btn_scan)
-        top.insertWidget(2, self.btn_pause); top.insertWidget(3, self.btn_cancel)
-        top.addWidget(self.prog)
-        top.insertWidget(4, self.btn_settings)
-        top.insertWidget(5, self.btn_export)
+        self._counts_label = QLabel("")
+        sb = self.statusBar()
+        sb.addPermanentWidget(self.prog)
+        sb.addPermanentWidget(self._counts_label)
+
+        # 空态引导（无照片时盖在缩略图区中央）
+        self._empty_hint = QLabel(
+            "<div style='color:#888; font-size:14px;'>"
+            "还没有照片索引<br/><br/>"
+            "1. 点工具栏「选择目录」（Ctrl+O）或把照片文件夹拖进窗口<br/>"
+            "2. 点「扫描」（F5）开始索引 —— 只读原照片，绝不修改<br/>"
+            "3. 扫描完成后再按人整理、导出</div>")
+        self._empty_hint.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self._empty_hint.setWordWrap(True)
+        self._empty_hint.setParent(self.grid)
+        self._empty_hint.setGeometry(self.grid.rect())
+        self._empty_hint.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
+
+        # 记忆窗口状态
+        geo = self._cfg.get("geometry")
+        if geo:
+            self.restoreGeometry(QByteArray.fromHex(geo.encode("ascii")))
+        vi = self._cfg.get("view_index")
+        if isinstance(vi, int) and 0 <= vi < self.view_selector.count():
+            self.view_selector.setCurrentIndex(vi)
+        self.setAcceptDrops(True)
+        QShortcut(QKeySequence("F2"), self).activated.connect(
+            lambda: self._rename_current_person())
+        QShortcut(QKeySequence("Delete"), self).activated.connect(
+            lambda: self._remove_selected_faces())
         self.refresh_persons()
 
     # ---- 搜索：同时刷中区视图与左栏人物 ----
@@ -266,7 +346,7 @@ class MainWindow(QMainWindow):
         self._worker.progress.connect(self.on_scan_progress)
         self._worker.done.connect(self.on_scan_done)
         self._worker.failed.connect(self.on_scan_failed)
-        self.btn_scan.setEnabled(False)
+        self.act_scan.setEnabled(False)
         self.prog.setRange(0, 0)  # 清点目录阶段总数未知，短暂忙碌
         self.prog.show()
         self.statusBar().showMessage("开始扫描：正在清点目录…")
@@ -281,8 +361,8 @@ class MainWindow(QMainWindow):
     def on_scan_done(self):
         self.prog.hide()
         self.prog.setRange(0, 100); self.prog.setValue(0)
-        self.btn_scan.setEnabled(True)
-        self._paused = False; self.btn_pause.setText("暂停")
+        self.act_scan.setEnabled(True)
+        self._paused = False; self.act_pause.setText("暂停")
         self._avg_cache.clear()  # 新扫描可能产出新裁剪
         self.refresh_view(); self.refresh_persons()
         if getattr(self, "_worker", None) and self._worker._cancel.is_set():
@@ -293,27 +373,66 @@ class MainWindow(QMainWindow):
 
     def on_scan_failed(self, msg):
         self.prog.hide()
-        self.btn_scan.setEnabled(True)
+        self.act_scan.setEnabled(True)
         self.statusBar().showMessage(f"扫描失败: {msg}")
 
     def _toggle_pause(self):
         if not self._worker:
             return
         if self._paused:
-            self._worker.resume(); self._paused = False; self.btn_pause.setText("暂停")
+            self._worker.resume(); self._paused = False; self.act_pause.setText("暂停")
             self.statusBar().showMessage("继续扫描")
         else:
-            self._worker.pause(); self._paused = True; self.btn_pause.setText("继续")
+            self._worker.pause(); self._paused = True; self.act_pause.setText("继续")
             self.statusBar().showMessage("已暂停")
 
     def _open_settings(self):
         dlg = SettingsDialog(self._cfg, self)
         if dlg.exec() == QDialog.DialogCode.Accepted:
-            self._cfg = dlg.result_cfg(self._cfg)
-            save_settings(self.settings_path, self._cfg)
-            if self._clusterer_factory:
-                self.clusterer = self._clusterer_factory()
-            self.refresh_view(); self.refresh_persons()
+            self._apply_settings(self._cfg, dlg.result_cfg(self._cfg))
+
+    def _apply_settings(self, old, new):
+        self._cfg = new
+        save_settings(self.settings_path, self._cfg)
+        if self._clusterer_factory:
+            self.clusterer = self._clusterer_factory()  # 工厂应读最新 settings
+        if need_recluster(old, new) and self.clusterer is not None:
+            self._start_recluster()
+            return
+        self.refresh_view(); self.refresh_persons()
+
+    def _start_recluster(self):
+        if self._reclustering:
+            return
+        self._reclustering = True
+        self.act_scan.setEnabled(False)
+        self.act_export.setEnabled(False)
+        self.statusBar().showMessage("正在按新阈值重排人物…")
+        QThreadPool.globalInstance().start(
+            _ReclusterRunner(self.clusterer, self._recluster_sig))
+
+    def _recluster_done(self):
+        self._reclustering = False
+        self.act_scan.setEnabled(True)
+        self.act_export.setEnabled(True)
+        self._avg_cache.clear()
+        self.refresh_view(); self.refresh_persons()
+        self.statusBar().showMessage("已按新阈值重排完成")
+
+    def _recluster_failed(self, msg):
+        self._reclustering = False
+        self.act_scan.setEnabled(True)
+        self.act_export.setEnabled(True)
+        self.statusBar().showMessage(f"重排失败: {msg}")
+
+    def _about(self):
+        from app.version import APP_VERSION
+        QMessageBox.about(
+            self, "关于 FaceSorter",
+            f"<b>FaceSorter {APP_VERSION}</b><br/>"
+            "完全离线的照片人物分类工具：只索引，绝不修改原照片。<br/><br/>"
+            "双击看原图 · 拖拽脸部到左侧人物 · 右键更多操作<br/>"
+            "Ctrl+O 选目录 · F5 扫描 · Ctrl+E 导出 · Ctrl+, 设置")
 
     # ---- 导出 ----
     def _export_person(self):
@@ -329,7 +448,7 @@ class MainWindow(QMainWindow):
         dest = QFileDialog.getExistingDirectory(self, "选择导出目标目录")
         if not dest:
             return
-        self.btn_export.setEnabled(False)
+        self.act_export.setEnabled(False)
         self.statusBar().showMessage("正在导出…")
         self._export_runner = _ExportRunner(self.store, pid, dest)
         self._export_runner.signals.done.connect(self._export_done)
@@ -337,13 +456,13 @@ class MainWindow(QMainWindow):
         QThreadPool.globalInstance().start(self._export_runner)
 
     def _export_done(self, n, label):
-        self.btn_export.setEnabled(True)
+        self.act_export.setEnabled(True)
         self.statusBar().showMessage("就绪")
         QMessageBox.information(self, "导出完成",
                                 f"已为「{label}」导出 {n} 张照片副本（原文件未动）。")
 
     def _export_failed(self, msg):
-        self.btn_export.setEnabled(True)
+        self.act_export.setEnabled(True)
         self.statusBar().showMessage("就绪")
         QMessageBox.warning(self, "导出失败", msg)
 
@@ -416,6 +535,20 @@ class MainWindow(QMainWindow):
 
     # ---- 中区 ----
     def refresh_view(self):
+        self._refresh_rows()
+        self._update_counts()
+        self._update_empty_hint()
+
+    def _update_counts(self):
+        n_photos = self.store.count_photos()
+        n_persons = len(self.store.persons_with_counts())
+        self._counts_label.setText(f"{n_photos} 照片 · {n_persons} 人")
+
+    def _update_empty_hint(self):
+        self._empty_hint.setGeometry(self.grid.rect())
+        self._empty_hint.setVisible(self.grid_model.rowCount() == 0)
+
+    def _refresh_rows(self):
         mode, pid = self._current_person_view()
         if mode == "photo_person":
             # 人物照片堆：整张照片（合照会出现在每个人的堆里）
@@ -554,3 +687,39 @@ class MainWindow(QMainWindow):
         menu.addAction("新建人物", lambda: self._new_person_from_faces(face_ids))
         menu.addAction("从这人移除", lambda: self._remove_from_person(face_ids))
         menu.exec(e.globalPos())
+    # ---- 窗口级：记忆状态 / 拖放目录 / 快捷键 ----
+    def closeEvent(self, e):
+        self._cfg["geometry"] = bytes(self.saveGeometry()).hex()
+        self._cfg["last_roots"] = list(self.roots)
+        self._cfg["view_index"] = self.view_selector.currentIndex()
+        save_settings(self.settings_path, self._cfg)
+        super().closeEvent(e)
+
+    def resizeEvent(self, e):
+        super().resizeEvent(e)
+        self._empty_hint.setGeometry(self.grid.rect())
+
+    def dragEnterEvent(self, e):
+        if e.mimeData().hasUrls():
+            e.acceptProposedAction()
+
+    def dropEvent(self, e):
+        from pathlib import Path
+        dirs = [u.toLocalFile() for u in e.mimeData().urls()
+                if u.isLocalFile() and Path(u.toLocalFile()).is_dir()]
+        if dirs:
+            self.roots = dirs
+            self.statusBar().showMessage(f"目录: {'、'.join(dirs)}（按 F5 开始扫描）")
+            e.acceptProposedAction()
+
+    def _rename_current_person(self):
+        mode, pid = self._current_person_view()
+        if mode in ("photo_person", "face_person"):
+            self._rename_person(pid)
+
+    def _remove_selected_faces(self):
+        face_ids = [d.data(Qt.ItemDataRole.UserRole)[1]
+                    for d in self.grid.selectedIndexes()
+                    if isinstance(d.data(Qt.ItemDataRole.UserRole), tuple)]
+        if face_ids:
+            self._remove_from_person(face_ids)

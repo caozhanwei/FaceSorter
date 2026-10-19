@@ -1,5 +1,6 @@
 import sys
 from PyQt6.QtWidgets import QApplication, QMessageBox
+from PyQt6.QtGui import QFont
 from app.paths import data_dir
 from app.settings import load_settings
 from app.store import Store, StoreCorrupted
@@ -22,15 +23,20 @@ def _open_store(db):
 def main():
     d = data_dir()
     eng = resolve_variant()
-    cfg = load_settings(d / "settings.json",
-                        engine=eng if eng != "none" else None)
+    load_settings(d / "settings.json", engine=eng if eng != "none" else None)
     app = QApplication(sys.argv)
+    app.setFont(QFont("Microsoft YaHei UI", 9))
     store = _open_store(d / "facesorter.db")
+
+    def _clusterer_factory():
+        # 每次重建都读最新设置：改完阈值立即生效（含重排）
+        cfg = load_settings(d / "settings.json")
+        return Clusterer(store, threshold=cfg["threshold"],
+                         time_boost=cfg["time_boost"],
+                         time_window_min=cfg["time_window"])
+
     win = MainWindow(store, build_detector_factory(eng), d / "settings.json",
-                     lambda: Clusterer(store, threshold=cfg["threshold"],
-                                       time_boost=cfg["time_boost"],
-                                       time_window_min=cfg["time_window"]),
-                     engine_label=ENGINE_LABELS[eng])
+                     _clusterer_factory, engine_label=ENGINE_LABELS[eng])
     win.show()
     sys.exit(app.exec())
 
