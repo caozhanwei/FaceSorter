@@ -1,6 +1,6 @@
 from PyQt6.QtCore import (Qt, pyqtSignal, QUrl, QMimeData, QByteArray,
                           QObject, QRunnable, QThreadPool)
-from PyQt6.QtGui import (QStandardItemModel, QStandardItem, QPixmap,
+from PyQt6.QtGui import (QStandardItemModel, QStandardItem, QPixmap, QIcon,
                          QDesktopServices, QDrag)
 from PyQt6.QtWidgets import (QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QComboBox, QLineEdit, QListView, QLabel, QStatusBar, QListWidget,
@@ -378,13 +378,13 @@ class MainWindow(QMainWindow):
             return
         def _make(pm_thumb, r=r, item=item):
             if pm_thumb.isNull() or not r["pw"]:
-                item.setIcon(item.icon())
                 return
             sx = pm_thumb.width() / r["pw"]; sy = pm_thumb.height() / r["ph"]
             x, y = int(r["x"]*sx), int(r["y"]*sy)
             w, h = int(r["w"]*sx), int(r["h"]*sy)
             crop = pm_thumb.copy(max(0, x), max(0, y), max(8, w), max(8, h)).scaled(128, 128)
-            item.setIcon(crop)
+            # setIcon 必须传 QIcon：传 QPixmap 在 PyQt6 下原生段错误（点击人物闪退根因）
+            item.setIcon(QIcon(crop))
         self.thumbs.pixmap_for(r["thumb_path"], _make)
 
     # ---- 人物操作 ----
