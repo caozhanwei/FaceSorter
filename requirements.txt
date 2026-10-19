@@ -1,4 +1,4 @@
 PyQt6
-opencv-python
+opencv-python<5
 numpy
 pillow
