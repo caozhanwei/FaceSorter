@@ -58,8 +58,17 @@ def process_one(path, store, detector, clusterer, thumb_dir: Path):
     for b in boxes:
         feature = None
         if b.clusturable:
-            x1, y1, x2, y2 = expand_box(b.x, b.y, b.w, b.h, w, h)
-            feature = pack_feature(extract(gray[y1:y2, x1:x2]))
+            vec = None
+            embed = getattr(detector, "embed", None)
+            if embed is not None:
+                try:
+                    vec = embed(img, b)
+                except Exception:
+                    vec = None  # 模型损坏等：降级 LBP，扫描不中断
+            if vec is None:
+                x1, y1, x2, y2 = expand_box(b.x, b.y, b.w, b.h, w, h)
+                vec = extract(gray[y1:y2, x1:x2])
+            feature = pack_feature(vec)
         face_id = store.add_face(photo_id, b.x, b.y, b.w, b.h, b.quality, feature)
         if b.clusturable and clusterer is not None:
             clusterer.assign(face_id)

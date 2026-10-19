@@ -111,13 +111,14 @@ class SettingsDialog(QDialog):
     def __init__(self, cfg, parent=None):
         super().__init__(parent); self.setWindowTitle("设置")
         form = QFormLayout(self)
-        self.thr = QDoubleSpinBox(); self.thr.setRange(0.1, 0.9); self.thr.setSingleStep(0.05)
+        self.thr = QDoubleSpinBox(); self.thr.setRange(0.05, 0.9); self.thr.setSingleStep(0.01)
+        self.thr.setDecimals(2)
         self.thr.setValue(cfg["threshold"])
         self.boost = QDoubleSpinBox(); self.boost.setRange(1.0, 1.5); self.boost.setSingleStep(0.05)
         self.boost.setValue(cfg["time_boost"])
         self.win_min = QSpinBox(); self.win_min.setRange(0, 240); self.win_min.setValue(cfg["time_window"])
         self.thumb_dir = QLineEdit(cfg.get("thumb_dir") or "")
-        form.addRow("聚类阈值(越小越易并堆)", self.thr)
+        form.addRow("聚类阈值(越小越严，不易并堆)", self.thr)
         form.addRow("时间加成系数", self.boost)
         form.addRow("时间窗口(分钟)", self.win_min)
         form.addRow("缩略图缓存目录(留空=exe旁data/thumbs)", self.thumb_dir)
@@ -134,7 +135,8 @@ class SettingsDialog(QDialog):
 
 
 class MainWindow(QMainWindow):
-    def __init__(self, store, detector_factory, settings_path, clusterer_factory=None):
+    def __init__(self, store, detector_factory, settings_path, clusterer_factory=None,
+                 engine_label=""):
         super().__init__()
         self.store = store
         self.settings_path = settings_path
@@ -142,7 +144,7 @@ class MainWindow(QMainWindow):
         self._clusterer_factory = clusterer_factory
         self._cfg = load_settings(settings_path)
         self.clusterer = clusterer_factory() if clusterer_factory else None
-        self.setWindowTitle("FaceSorter 照片人物分类")
+        self.setWindowTitle(f"FaceSorter 照片人物分类{engine_label}")
         self.thumbs = ThumbProvider(self)
         top = QHBoxLayout()
         self.view_selector = QComboBox()

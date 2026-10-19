@@ -3,8 +3,8 @@ from PyQt6.QtWidgets import QApplication, QMessageBox
 from app.paths import data_dir
 from app.settings import load_settings
 from app.store import Store, StoreCorrupted
-from app.detector import FaceDetector
 from app.cluster import Clusterer
+from app.variant import resolve_variant, build_detector_factory, ENGINE_LABELS
 from app.ui.main_window import MainWindow
 
 def _open_store(db):
@@ -21,13 +21,16 @@ def _open_store(db):
 
 def main():
     d = data_dir()
-    cfg = load_settings(d / "settings.json")
+    eng = resolve_variant()
+    cfg = load_settings(d / "settings.json",
+                        engine=eng if eng != "none" else None)
     app = QApplication(sys.argv)
     store = _open_store(d / "facesorter.db")
-    win = MainWindow(store, FaceDetector, d / "settings.json",
+    win = MainWindow(store, build_detector_factory(eng), d / "settings.json",
                      lambda: Clusterer(store, threshold=cfg["threshold"],
                                        time_boost=cfg["time_boost"],
-                                       time_window_min=cfg["time_window"]))
+                                       time_window_min=cfg["time_window"]),
+                     engine_label=ENGINE_LABELS[eng])
     win.show()
     sys.exit(app.exec())
 

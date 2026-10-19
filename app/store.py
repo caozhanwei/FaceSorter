@@ -31,6 +31,9 @@ def unpack_feature(b: bytes) -> np.ndarray:
 class StoreCorrupted(Exception):
     pass
 
+FEATURE_VERSION = 2  # 1=LBP直方图(1.0.x) 2=深度嵌入（SFace/ArcFace）
+
+
 class Store:
     def __init__(self, db_path: Path):
         db_path.parent.mkdir(parents=True, exist_ok=True)
@@ -41,9 +44,22 @@ class Store:
             self.con.executescript(SCHEMA)
             if self.con.execute("PRAGMA quick_check").fetchone()[0] != "ok":
                 raise StoreCorrupted(str(db_path))
+            self._migrate_feature_version()
             self.con.commit()
         except sqlite3.DatabaseError as e:
             raise StoreCorrupted(str(db_path)) from e
+
+    def _migrate_feature_version(self):
+        v = self.con.execute("PRAGMA user_version").fetchone()[0]
+        if v == FEATURE_VERSION:
+            return
+        # 旧特征（LBP）与新引擎嵌入不在同一空间，无法换算：清索引重扫。
+        # 原照片文件永不被动；磁盘缩略图留作覆盖写，不算数据丢失。
+        if v < FEATURE_VERSION:
+            self.con.execute("DELETE FROM faces")
+            self.con.execute("DELETE FROM persons")
+            self.con.execute("DELETE FROM photos")
+            self.con.execute(f"PRAGMA user_version={FEATURE_VERSION}")
 
     def _exec(self, sql, args=()):
         cur = self.con.execute(sql, args); self.con.commit(); return cur

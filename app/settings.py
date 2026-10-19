@@ -1,14 +1,23 @@
 import json
 from pathlib import Path
 
-DEFAULTS = {"threshold": 0.5, "time_boost": 1.1, "time_window": 30, "thumb_dir": None}
+# 深度嵌入引擎各自的余弦距离默认阈值（同人判定）：
+# yunet=SFace，OpenCV 官方教程值 0.363；arcface=WebFace600K R50，按 sim≥0.6 判同人
+ENGINE_THRESHOLDS = {"yunet": 0.36, "arcface": 0.40}
 
-def load_settings(path: Path) -> dict:
+DEFAULTS = {"threshold": ENGINE_THRESHOLDS["yunet"], "time_boost": 1.1,
+            "time_window": 30, "thumb_dir": None, "engine": None}
+
+def load_settings(path: Path, engine: str = None) -> dict:
     cfg = dict(DEFAULTS)
     try:
         cfg.update(json.loads(Path(path).read_text("utf-8")))
     except Exception:
         pass
+    if engine is not None and cfg.get("engine") != engine:
+        # 引擎换了（或 1.0.x 升级无 engine 键）：旧阈值在新距离空间无意义，重置
+        cfg["threshold"] = ENGINE_THRESHOLDS.get(engine, cfg["threshold"])
+        cfg["engine"] = engine
     return cfg
 
 def save_settings(path: Path, cfg: dict):

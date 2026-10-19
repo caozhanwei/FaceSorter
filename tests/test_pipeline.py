@@ -75,3 +75,39 @@ def test_run_scan_disk_full_raises(tmp_path, monkeypatch):
     monkeypatch.setattr(pl, "make_thumb", _boom)
     with pytest.raises(OSError):
         run_scan([str(tmp_path)], store, FaceDetector(), None, tmp_path / "th")
+
+
+class _FakeDeepEngine:
+    """有 embed 的引擎：process_one 必须走深度嵌入而不是 LBP。"""
+    def __init__(self):
+        self.embed_calls = []
+    def detect(self, img):
+        from app.detector import FaceBox
+        return [FaceBox(10, 10, 80, 80, 100.0, True,
+                        row=np.arange(15, dtype=np.float32), score=0.9)]
+    def embed(self, img, box):
+        self.embed_calls.append(tuple(box.row.shape))
+        v = np.zeros(128, np.float32); v[0] = 1.0
+        return v
+
+def test_process_one_uses_engine_embed(tmp_path):
+    store = Store(tmp_path / "t.db")
+    eng = _FakeDeepEngine()
+    p = tmp_path / "p.jpg"; _write_img(p)
+    process_one(p.as_posix(), store, eng, None, tmp_path / "thumbs")
+    rows = store.con.execute("SELECT feature FROM faces").fetchall()
+    assert eng.embed_calls == [(15,)]
+    assert len(rows) == 1
+    assert np.frombuffer(rows[0]["feature"], np.float32).shape == (128,)
+
+def test_process_one_embed_failure_falls_back_to_lbp(tmp_path, monkeypatch):
+    # embed 抛异常（如模型损坏）：降级 LBP，照片仍被索引，扫描不中断
+    store = Store(tmp_path / "t.db")
+    class _Broken(_FakeDeepEngine):
+        def embed(self, img, box):
+            raise RuntimeError("onnx broken")
+    p = tmp_path / "p.jpg"; _write_img(p)
+    process_one(p.as_posix(), store, _Broken(), None, tmp_path / "thumbs")
+    rows = store.con.execute("SELECT feature FROM faces").fetchall()
+    assert len(rows) == 1
+    assert np.frombuffer(rows[0]["feature"], np.float32).shape == (5540,)

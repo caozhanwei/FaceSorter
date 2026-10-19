@@ -1,7 +1,9 @@
-from app.features import hellinger, parse_time
+from app.features import distance, parse_time
+from app.engine_yunet import DEFAULT_COSINE_THRESHOLD
 
 class Clusterer:
-    def __init__(self, store, threshold=0.5, time_window_min=30, time_boost=1.1):
+    def __init__(self, store, threshold=DEFAULT_COSINE_THRESHOLD,
+                 time_window_min=30, time_boost=1.1):
         self.store = store
         self.threshold = threshold
         self.time_window_min = time_window_min
@@ -31,7 +33,7 @@ class Clusterer:
             proto, last_s = self._snapshot(pid)
             if proto is None:
                 continue
-            d = hellinger(feat, proto)
+            d = distance(feat, proto)
             last = parse_time(last_s)
             if (taken and last and self.time_boost > 1.0
                     and abs((taken - last).total_seconds())
