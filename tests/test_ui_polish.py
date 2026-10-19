@@ -108,3 +108,16 @@ def test_status_counts_label(tmp_path, qapp):
     w.refresh_view()
     txt = w._counts_label.text()
     assert "1" in txt and "照片" in txt and "1" in txt and "人" in txt
+
+
+def test_settings_dialog_scan_threads_spin(tmp_path, qapp):
+    # 线程数可设置：对话框读当前值，改完写回 cfg
+    from PyQt6.QtWidgets import QDialog
+    from app.ui.main_window import SettingsDialog
+    cfg = {"threshold": 0.36, "time_boost": 1.1, "time_window": 30,
+           "thumb_dir": None, "engine": "yunet", "scan_threads": 6}
+    dlg = SettingsDialog(cfg)
+    assert dlg.threads.value() == 6
+    dlg.threads.setValue(9)
+    out = dlg.result_cfg(cfg)
+    assert out["scan_threads"] == 9

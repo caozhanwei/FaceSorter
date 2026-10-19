@@ -43,3 +43,24 @@ def test_worker_pause_then_resume_completes(tmp_path, qapp):
     w.done.connect(qapp.quit)
     w.start(); qapp.exec()
     assert store.count_photos() == 3
+
+
+def test_worker_passes_face_dir_and_workers(tmp_path, qapp, monkeypatch):
+    # 回归锁：face_dir/workers 必须从 ScanWorker 一路传到 run_scan
+    # （1.2.0 曾漏传 face_dir —— UI 扫描静默不落人脸裁剪）
+    import app.ui.scan_progress as sp
+    captured = {}
+
+    def _fake_run_scan(roots, store, detector, clusterer, thumb_dir,
+                       face_dir=None, progress=None, cancel=None, workers=1):
+        captured.update(face_dir=face_dir, workers=workers)
+        if progress:
+            progress(0, 0)
+
+    monkeypatch.setattr(sp, "run_scan", _fake_run_scan)
+    w = ScanWorker([str(tmp_path)], None, None, None, tmp_path / "th",
+                   tmp_path / "faces", workers=7)
+    w.done.connect(qapp.quit)
+    w.start(); qapp.exec()
+    assert captured["face_dir"] == tmp_path / "faces"
+    assert captured["workers"] == 7

@@ -168,10 +168,14 @@ class SettingsDialog(QDialog):
         self.boost = QDoubleSpinBox(); self.boost.setRange(1.0, 1.5); self.boost.setSingleStep(0.05)
         self.boost.setValue(cfg["time_boost"])
         self.win_min = QSpinBox(); self.win_min.setRange(0, 240); self.win_min.setValue(cfg["time_window"])
+        self.threads = QSpinBox(); self.threads.setRange(1, 32)
+        self.threads.setValue(cfg.get("scan_threads", 4))
+        self.threads.setToolTip("同时处理的照片数：解码/检测并行，不改变聚类结果")
         self.thumb_dir = QLineEdit(cfg.get("thumb_dir") or "")
         form.addRow("聚类阈值(越小越严，不易并堆)", self.thr)
         form.addRow("时间加成系数", self.boost)
         form.addRow("时间窗口(分钟)", self.win_min)
+        form.addRow("扫描线程数", self.threads)
         form.addRow("缩略图缓存目录(留空=exe旁data/thumbs)", self.thumb_dir)
         bb = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
         bb.accepted.connect(self.accept); bb.rejected.connect(self.reject)
@@ -181,6 +185,7 @@ class SettingsDialog(QDialog):
         cfg = dict(cfg)
         cfg.update(threshold=self.thr.value(), time_boost=self.boost.value(),
                    time_window=self.win_min.value(),
+                   scan_threads=self.threads.value(),
                    thumb_dir=self.thumb_dir.text().strip() or None)
         return cfg
 
@@ -342,7 +347,8 @@ class MainWindow(QMainWindow):
             return
         det = self._detector_factory()
         self._worker = ScanWorker(self.roots, self.store, det, self.clusterer,
-                                  self._thumb_dir(), self._face_dir())
+                                  self._thumb_dir(), self._face_dir(),
+                                  workers=int(self._cfg.get("scan_threads", 4)))
         self._worker.progress.connect(self.on_scan_progress)
         self._worker.done.connect(self.on_scan_done)
         self._worker.failed.connect(self.on_scan_failed)

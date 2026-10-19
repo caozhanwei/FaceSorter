@@ -6,7 +6,8 @@ from pathlib import Path
 ENGINE_THRESHOLDS = {"yunet": 0.36, "arcface": 0.40}
 
 DEFAULTS = {"threshold": ENGINE_THRESHOLDS["yunet"], "time_boost": 1.1,
-            "time_window": 30, "thumb_dir": None, "engine": None}
+            "time_window": 30, "thumb_dir": None, "engine": None,
+            "scan_threads": 4}
 
 def load_settings(path: Path, engine: str = None) -> dict:
     cfg = dict(DEFAULTS)

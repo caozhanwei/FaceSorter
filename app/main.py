@@ -35,7 +35,8 @@ def main():
                          time_boost=cfg["time_boost"],
                          time_window_min=cfg["time_window"])
 
-    win = MainWindow(store, build_detector_factory(eng), d / "settings.json",
+    win = MainWindow(store, build_detector_factory(eng, d / "settings.json"),
+                     d / "settings.json",
                      _clusterer_factory, engine_label=ENGINE_LABELS[eng])
     win.show()
     sys.exit(app.exec())

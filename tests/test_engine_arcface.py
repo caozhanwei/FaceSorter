@@ -59,3 +59,10 @@ def test_build_fallback_when_models_missing(tmp_path, monkeypatch):
     monkeypatch.setattr("app.engine_arcface.model_dir", lambda: tmp_path)
     from app.engine_arcface import build_detector
     assert isinstance(build_detector(), FaceDetector)
+
+
+def test_intra_threads_option_recorded():
+    # ORT 线程上限可注入（多线程扫描防超订）；None=ORT 默认
+    from app.engine_arcface import ArcFaceDetector
+    det = ArcFaceDetector(intra_threads=3)
+    assert det.intra_threads == 3

@@ -36,17 +36,29 @@ def _nms_indices(boxes, scores, thr=0.4):
 
 
 class ArcFaceDetector:
+    # onnxruntime InferenceSession 并发 Run 官方线程安全 → 扫描可真并行
+    thread_safe = True
+
     def __init__(self, det_len=640, score_threshold=0.5,
-                 min_cluster=60, min_quality=60.0):
+                 min_cluster=60, min_quality=60.0, intra_threads=None):
         import onnxruntime as ort  # 延迟导入：A 版打包不含 onnxruntime
         d = model_dir()
+        # 多线程扫描时收紧 ORT 内部并行（workers×intra≈核数），防线程超订互相踩
+        so = None
+        if intra_threads:
+            so = ort.SessionOptions()
+            so.intra_op_num_threads = intra_threads
+            so.inter_op_num_threads = 1
         self._det = ort.InferenceSession(
-            str(d / ARCFACE_FILES[0]), providers=["CPUExecutionProvider"])
+            str(d / ARCFACE_FILES[0]), sess_options=so,
+            providers=["CPUExecutionProvider"])
         self._rec = ort.InferenceSession(
-            str(d / ARCFACE_FILES[1]), providers=["CPUExecutionProvider"])
+            str(d / ARCFACE_FILES[1]), sess_options=so,
+            providers=["CPUExecutionProvider"])
         self._det_in = self._det.get_inputs()[0].name
         self._rec_in = self._rec.get_inputs()[0].name
         self.det_len = det_len
+        self.intra_threads = intra_threads
         self.cfg = dict(min_cluster=min_cluster, min_quality=min_quality,
                         score_threshold=score_threshold)
 
@@ -124,8 +136,8 @@ class ArcFaceDetector:
         return v / n if n > 0 else v
 
 
-def build_detector():
+def build_detector(intra_threads=None):
     try:
-        return ArcFaceDetector()
+        return ArcFaceDetector(intra_threads=intra_threads)
     except Exception:
         return FaceDetector()

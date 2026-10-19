@@ -30,10 +30,22 @@ def engine_threshold(variant: str) -> float:
     return ENGINE_THRESHOLDS.get(variant, ENGINE_THRESHOLDS["yunet"])
 
 
-def build_detector_factory(variant: str):
+def build_detector_factory(variant: str, settings_path=None):
     if variant == "arcface":
         from app.engine_arcface import build_detector
-        return build_detector
+        if settings_path is None:
+            return build_detector
+
+        def _fac():
+            # 每次扫描现读线程数：workers>1 时收紧 ORT 内部并行防超订
+            from app.settings import load_settings
+            threads = load_settings(settings_path).get("scan_threads", 4)
+            intra = None
+            if threads and threads > 1:
+                intra = max(1, (os.cpu_count() or 4) // threads)
+            return build_detector(intra_threads=intra)
+
+        return _fac
     if variant == "yunet":
         from app.engine_yunet import build_detector
         return build_detector

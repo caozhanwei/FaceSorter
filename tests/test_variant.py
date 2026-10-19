@@ -40,3 +40,27 @@ def test_threshold_per_engine():
     assert V.engine_threshold("yunet") == pytest.approx(0.36)
     assert V.engine_threshold("arcface") == pytest.approx(0.40)
     assert V.engine_threshold("none") == pytest.approx(0.5)  # Haar 沿用旧默认
+
+
+def test_arcface_factory_tunes_ort_threads_from_settings(tmp_path, monkeypatch):
+    # 多线程扫描防超订：workers×intra ≈ 核数。工厂每次现读 settings 的 scan_threads
+    import os
+    from app.settings import save_settings
+    captured = {}
+    import app.engine_arcface as ea
+    monkeypatch.setattr(ea, "build_detector",
+                        lambda intra_threads=None: captured.update(t=intra_threads) or 1)
+    s = tmp_path / "s.json"
+    save_settings(s, {"scan_threads": 4})
+    fac = V.build_detector_factory("arcface", s)
+    fac()
+    cpu = os.cpu_count() or 4
+    assert captured["t"] == max(1, cpu // 4)
+    save_settings(s, {"scan_threads": 1})
+    fac()
+    assert captured["t"] is None  # 单线程：ORT 默认（吃满核）
+
+
+def test_arcface_factory_without_settings_keeps_default():
+    fac = V.build_detector_factory("arcface")
+    assert callable(fac)

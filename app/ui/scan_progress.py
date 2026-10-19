@@ -7,10 +7,12 @@ class ScanWorker(QThread):
     done = pyqtSignal()
     failed = pyqtSignal(str)
 
-    def __init__(self, roots, store, detector, clusterer, thumb_dir, face_dir=None):
+    def __init__(self, roots, store, detector, clusterer, thumb_dir,
+                 face_dir=None, workers=1):
         super().__init__()
         self.roots, self.store, self.detector = roots, store, detector
         self.clusterer, self.thumb_dir, self.face_dir = clusterer, thumb_dir, face_dir
+        self.workers = workers
         self._cancel = threading.Event()
         self._resume = threading.Event(); self._resume.set()
 
@@ -31,7 +33,8 @@ class ScanWorker(QThread):
                 self._resume.wait(0.2)
         try:
             run_scan(self.roots, self.store, self.detector, self.clusterer,
-                     self.thumb_dir, progress=_progress, cancel=self._cancel)
+                     self.thumb_dir, self.face_dir, progress=_progress,
+                     cancel=self._cancel, workers=self.workers)
         except Exception as e:
             self.failed.emit(str(e))
         self.done.emit()

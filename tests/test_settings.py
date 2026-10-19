@@ -1,5 +1,5 @@
 import json, pytest
-from app.settings import load_settings, save_settings, DEFAULTS
+from app.settings import load_settings, save_settings, DEFAULTS, need_recluster
 
 def test_roundtrip_defaults(tmp_path):
     p = tmp_path / "s.json"
@@ -9,6 +9,15 @@ def test_roundtrip_defaults(tmp_path):
     save_settings(p, cfg)
     assert json.loads(p.read_text("utf-8"))["threshold"] == 0.4
     assert load_settings(p)["threshold"] == 0.4
+
+
+def test_scan_threads_default_and_no_recluster():
+    # 线程数只影响扫描速度，不改聚类语义：默认 4，调整不触发重排
+    assert DEFAULTS["scan_threads"] == 4
+    old = dict(DEFAULTS)
+    new = dict(DEFAULTS, scan_threads=8)
+    assert need_recluster(old, new) is False
+
 
 
 def test_engine_migration_resets_stale_threshold(tmp_path):
