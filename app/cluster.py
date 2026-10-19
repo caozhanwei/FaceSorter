@@ -23,14 +23,10 @@ class Clusterer:
         photo = self.store.photo_of_face(face_id)
         taken = parse_time(photo["exif_taken_at"])
         same = self.store.person_ids_of_photo(photo["id"])
-        # manual 冻结：含手动归属脸的人物不再吸收 auto 脸
-        frozen = {r["person_id"] for r in self.store.con.execute(
-            "SELECT DISTINCT person_id FROM faces"
-            " WHERE source='manual' AND person_id IS NOT NULL")}
         best_pid, best_d = None, self.threshold
         for row in self.store.persons_with_counts():
             pid = row["id"]
-            if pid in same or pid in frozen or row["cnt"] == 0:
+            if pid in same or row["cnt"] == 0:
                 continue
             proto, last_s = self._snapshot(pid)
             if proto is None:

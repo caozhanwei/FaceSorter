@@ -52,9 +52,10 @@ def test_recluster_keeps_manual(env):
     a = _norm([1, 0, 0, 0])
     f1 = _mk(store, a, "1.jpg"); f2 = _mk(store, a, "2.jpg")
     p = cl.assign(f1); cl.assign(f2)
-    # 手动把 f2 挪给新人并锁定
     other = store.create_person("李四")
     store.set_face_person(f2, other, "manual")
     cl.invalidate(p); cl.invalidate(other)
     cl.recluster_auto()
-    assert store.faces_of_person(other)[0]["id"] == f2
+    rows = {r["id"]: r["source"] for r in store.faces_of_person(other)}
+    assert rows[f2] == "manual"   # manual 归属永不被自动重排覆盖
+    assert rows[f1] == "auto"     # auto 脸可经原型并入人工堆（spec §5.3）
