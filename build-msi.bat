@@ -3,7 +3,7 @@ rem FaceSorter 一键 MSI 打包：heat 收割 dist\FaceSorter -> candle -> ligh
 rem 依赖：PyInstaller 产物 dist\FaceSorter\ 已存在（先跑 build.bat），WiX 3.14 在 %WIX%
 setlocal
 set WIX=G:\work\tools\wix314\tools
-set PRODUCTVERSION=1.0.0
+set PRODUCTVERSION=1.0.1
 set OBJ=installer\obj
 
 if not exist "%WIX%\candle.exe" (

@@ -48,7 +48,7 @@ def msi_db():
 def test_msi_product_metadata(msi_db):
     _, db = msi_db
     assert _query_single(db, "SELECT `Value` FROM `Property` WHERE `Property` = 'ProductName'") == "FaceSorter"
-    assert _query_single(db, "SELECT `Value` FROM `Property` WHERE `Property` = 'ProductVersion'") == "1.0.0"
+    assert _query_single(db, "SELECT `Value` FROM `Property` WHERE `Property` = 'ProductVersion'") == "1.0.1"  # 与 build-msi.bat PRODUCTVERSION 同步
     assert _query_single(db, "SELECT `Value` FROM `Property` WHERE `Property` = 'Manufacturer'") == "FaceSorter"
 
 
