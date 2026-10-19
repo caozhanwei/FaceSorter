@@ -90,3 +90,32 @@ def test_fresh_db_stamps_version_and_keeps_data(tmp_path):
     s1.con.commit(); s1.con.close()
     s2 = Store(db)
     assert s2.count_photos() == 1  # 同版本重开不清数据
+
+
+# ---- 人物↔照片多对多（合照共享）与平均脸采样 ----
+
+def test_photos_of_person_shared_group_photo(tmp_path):
+    # 一张合照两个人都在：两个人的照片堆都含这张照片
+    store = Store(tmp_path / "t.db")
+    ph = store.upsert_photo("g:/group.jpg", 1.0, 1)
+    f1 = store.add_face(ph, 0, 0, 60, 60, 100.0, None)
+    f2 = store.add_face(ph, 100, 0, 60, 60, 100.0, None)
+    pa = store.create_person("甲")
+    pb = store.create_person("乙")
+    store.set_face_person(f1, pa, "auto")
+    store.set_face_person(f2, pb, "auto")
+    assert [r["id"] for r in store.photos_of_person(pa)] == [ph]
+    assert [r["id"] for r in store.photos_of_person(pb)] == [ph]
+
+def test_face_crops_of_person_quality_order(tmp_path):
+    # 平均脸采样：质量（清晰度）降序给前 N 张裁剪
+    store = Store(tmp_path / "t.db")
+    ph = store.upsert_photo("a.jpg", 1.0, 1)
+    f_low = store.add_face(ph, 0, 0, 10, 10, 10.0, None)
+    f_hi = store.add_face(ph, 0, 0, 20, 20, 900.0, None)
+    f_mid = store.add_face(ph, 0, 0, 30, 30, 100.0, None)
+    p = store.create_person("X")
+    for f in (f_low, f_hi, f_mid):
+        store.set_face_person(f, p, "auto")
+    ids = [r["id"] for r in store.face_crops_of_person(p)]
+    assert ids == [f_hi, f_mid, f_low]

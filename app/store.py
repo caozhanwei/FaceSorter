@@ -130,6 +130,19 @@ class Store:
             f"SELECT {self._FACE_COLS} FROM faces f JOIN photos p ON p.id=f.photo_id"
             " WHERE f.person_id=? ORDER BY p.exif_taken_at, p.path", (person_id,)).fetchall()
 
+    def photos_of_person(self, person_id):
+        """人物的照片堆：合照出现在其中每个人的堆里（经 faces 多对多）。"""
+        return self.con.execute(
+            "SELECT p.* FROM photos p JOIN faces f ON f.photo_id=p.id"
+            " WHERE f.person_id=? AND p.status='ok'"
+            " GROUP BY p.id ORDER BY p.exif_taken_at, p.path", (person_id,)).fetchall()
+
+    def face_crops_of_person(self, person_id, limit=16):
+        """平均脸采样：质量（清晰度）降序的脸部裁剪 id。"""
+        return self.con.execute(
+            "SELECT id, quality FROM faces WHERE person_id=?"
+            " ORDER BY quality DESC LIMIT ?", (person_id, limit)).fetchall()
+
     def faces_without_person(self):
         return self.con.execute(
             f"SELECT {self._FACE_COLS} FROM faces f JOIN photos p ON p.id=f.photo_id"

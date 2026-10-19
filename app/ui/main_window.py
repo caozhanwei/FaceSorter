@@ -1,6 +1,6 @@
 from PyQt6.QtCore import (Qt, pyqtSignal, QUrl, QMimeData, QByteArray,
                           QObject, QRunnable, QThreadPool)
-from PyQt6.QtGui import (QStandardItemModel, QStandardItem, QPixmap, QIcon,
+from PyQt6.QtGui import (QStandardItemModel, QStandardItem, QPixmap, QImage, QIcon,
                          QDesktopServices, QDrag)
 from PyQt6.QtWidgets import (QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QComboBox, QLineEdit, QListView, QLabel, QStatusBar, QListWidget,
@@ -9,6 +9,7 @@ from PyQt6.QtWidgets import (QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QFileDialog, QAbstractItemView)
 from app.settings import load_settings, save_settings
 from app.paths import data_dir
+from app.person_face import average_face
 from app.ui.thumb_provider import ThumbProvider
 from app.ui.scan_progress import ScanWorker
 from app.ui.persons_model import (MIME_FACE_IDS, persons_display,
@@ -53,6 +54,8 @@ class PersonsList(QListWidget):
             return
         pid = item.data(self._pid_role)
         menu = QMenu(self)
+        menu.addAction("管理此人的脸", lambda: self.window()._manage_faces(pid))
+        menu.addSeparator()
         menu.addAction("重命名", lambda: self.window()._rename_person(pid))
         menu.addAction("合并到…", lambda: self.window()._merge_person(pid))
         menu.addAction("置顶/取消置顶", lambda: self.window()._toggle_pin(pid))
@@ -85,6 +88,34 @@ class FaceView(QListView):
 class _ExportSignals(QObject):
     done = pyqtSignal(int, str)    # (数量, 人物标签)
     failed = pyqtSignal(str)
+
+
+class _AvgFaceSignals(QObject):
+    ready = pyqtSignal(int, object)  # (person_id, QImage|None)
+
+
+class _AvgFaceRunner(QRunnable):
+    """后台算人物平均脸（≤16 张对齐裁剪均值），完成后回主线程设图标。"""
+
+    def __init__(self, store, pid, face_dir, signals):
+        super().__init__()
+        self.store, self.pid, self.face_dir = store, pid, face_dir
+        self.signals = signals
+
+    def run(self):
+        try:
+            rows = self.store.face_crops_of_person(self.pid)
+            paths = [self.face_dir / f"{r['id']}.jpg" for r in rows]
+            img = average_face(paths)
+        except Exception:
+            img = None
+        qimg = None
+        if img is not None:
+            h, w = img.shape[:2]
+            # numpy 缓冲跨线程须 copy 固化；BGR 三通道对应 Format_BGR888
+            qimg = QImage(img.data, w, h, 3 * w,
+                          QImage.Format.Format_BGR888).copy()
+        self.signals.ready.emit(self.pid, qimg)
 
 
 class _ExportRunner(QRunnable):
@@ -185,6 +216,10 @@ class MainWindow(QMainWindow):
         self.roots = []
         self._worker = None
         self._paused = False
+        self._face_mgr_pid = None            # 「管理此人的脸」模式
+        self._avg_cache = {}                 # pid -> 平均脸 QIcon
+        self._avg_sig = _AvgFaceSignals()
+        self._avg_sig.ready.connect(self._on_avg_face)
         self.btn_dir = QPushButton("选择目录"); self.btn_scan = QPushButton("扫描")
         self.btn_pause = QPushButton("暂停"); self.btn_cancel = QPushButton("取消")
         self.btn_settings = QPushButton("设置")
@@ -248,6 +283,7 @@ class MainWindow(QMainWindow):
         self.prog.setRange(0, 100); self.prog.setValue(0)
         self.btn_scan.setEnabled(True)
         self._paused = False; self.btn_pause.setText("暂停")
+        self._avg_cache.clear()  # 新扫描可能产出新裁剪
         self.refresh_view(); self.refresh_persons()
         if getattr(self, "_worker", None) and self._worker._cancel.is_set():
             self.statusBar().showMessage("已取消（已处理部分保留，下次续扫）")
@@ -320,23 +356,55 @@ class MainWindow(QMainWindow):
                 continue
             it = QListWidgetItem(f"{'📌' if d['pinned'] else ''}{d['label']}({d['cnt']})")
             it.setData(PID_ROLE, d["id"])
+            icon = self._avg_cache.get(d["id"])
+            if icon is not None:
+                it.setIcon(icon)
             self.persons_list.addItem(it)
+            if icon is None:
+                QThreadPool.globalInstance().start(_AvgFaceRunner(
+                    self.store, d["id"], self._face_dir(), self._avg_sig))
         for label in SPECIAL_VIEWS:
             it = QListWidgetItem(label)
             self.persons_list.addItem(it)
 
+    def _on_avg_face(self, pid, qimg):
+        if qimg is None:
+            return
+        icon = QIcon(QPixmap.fromImage(qimg))
+        self._avg_cache[pid] = icon
+        for i in range(self.persons_list.count()):
+            it = self.persons_list.item(i)
+            if it.data(PID_ROLE) == pid:
+                it.setIcon(icon)
+                break
+
     def _person_clicked(self, item):
+        self._face_mgr_pid = None  # 点击=默认整照片堆视图
         self.refresh_view()
 
+    def _manage_faces(self, pid):
+        self._face_mgr_pid = pid
+        for i in range(self.persons_list.count()):
+            it = self.persons_list.item(i)
+            if it.data(PID_ROLE) == pid:
+                self.persons_list.setCurrentItem(it)
+                break
+        self.refresh_view()
+        self.statusBar().showMessage("脸部管理：拖拽到左侧人物或右键调整")
+
     def _current_person_view(self):
-        """返回 (mode, person_id)：mode ∈ face_person/face_unassigned"""
+        """返回 (mode, person_id)：mode ∈ photo_person/face_person/face_unassigned"""
         item = self.persons_list.currentItem()
         if item is None:
             return None, None
         if item.text() == "未归类脸":
             return "face_unassigned", None
         pid = item.data(PID_ROLE)
-        return ("face_person", pid) if pid else (None, None)
+        if not pid:
+            return None, None
+        if self._face_mgr_pid == pid:
+            return "face_person", pid
+        return "photo_person", pid
 
     def _face_rows_for_current(self):
         mode, pid = self._current_person_view()
@@ -348,7 +416,26 @@ class MainWindow(QMainWindow):
 
     # ---- 中区 ----
     def refresh_view(self):
-        mode, _ = self._current_person_view()
+        mode, pid = self._current_person_view()
+        if mode == "photo_person":
+            # 人物照片堆：整张照片（合照会出现在每个人的堆里）
+            self.grid_model.clear()
+            rows = self.store.photos_of_person(pid)
+            flt = self.search_box.text().strip().lower()
+            shown = 0
+            for r in rows:
+                if flt and flt not in r["path"].lower():
+                    continue
+                shown += 1
+                item = QStandardItem(r["path"].rsplit("/", 1)[-1])
+                item.setData(r["path"], Qt.ItemDataRole.UserRole)
+                item.setEditable(False)
+                self.grid_model.appendRow(item)
+                if r["thumb_path"]:
+                    self.thumbs.thumb_for(r["thumb_path"],
+                        lambda icon, it=item: it.setIcon(icon))
+            self.statusBar().showMessage(f"{shown} 张照片")
+            return
         if mode:
             self.grid_model.clear()
             rows = self._face_rows_for_current()
@@ -379,6 +466,12 @@ class MainWindow(QMainWindow):
         self.statusBar().showMessage(f"{len(rows)} 张 · 共 {self.store.count_photos()} 张")
 
     def _face_icon_async(self, item, r):
+        # 优先扫描期对齐裁剪（原图生成，清晰）；旧库无裁剪时退回缩略图裁剪
+        crop_path = self._face_dir() / f"{r['id']}.jpg"
+        if crop_path.exists():
+            self.thumbs.thumb_for(str(crop_path),
+                                  lambda icon, it=item: it.setIcon(icon))
+            return
         if not r["thumb_path"]:
             return
         def _make(pm_thumb, r=r, item=item):
@@ -411,6 +504,7 @@ class MainWindow(QMainWindow):
             self.store.merge_persons(pid, dst)
             if self.clusterer:
                 self.clusterer.invalidate(dst)
+            self._avg_cache.clear()
             self.refresh_persons(); self.refresh_view()
 
     def _toggle_pin(self, pid):
@@ -422,6 +516,7 @@ class MainWindow(QMainWindow):
         for fid in face_ids:
             self.store.set_face_person(fid, dst_pid, "manual")
         if self.clusterer: self.clusterer.invalidate(dst_pid)
+        self._avg_cache.clear()
         self.refresh_persons(); self.refresh_view()
 
     def _new_person_from_faces(self, face_ids):
@@ -431,6 +526,7 @@ class MainWindow(QMainWindow):
     def _remove_from_person(self, face_ids):
         for fid in face_ids:
             self.store.set_face_person(fid, None, "manual")
+        self._avg_cache.clear()
         self.refresh_persons(); self.refresh_view()
 
     def _open_item(self, index):

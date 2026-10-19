@@ -30,3 +30,22 @@ def test_merge_via_menu_logic(env):
     p2 = store.create_person()
     store.merge_persons(p2, p)
     assert store.persons_with_counts()[0]["cnt"] == 1
+
+
+# ---- 人物视图 = 整照片堆（合照多人共享）；脸部管理为独立模式 ----
+
+def test_person_view_shows_whole_photos(env):
+    from PyQt6.QtCore import Qt
+    win, store, p, f1 = env
+    win.persons_list.setCurrentRow(0)  # 张三
+    win.refresh_view()
+    assert win.grid_model.rowCount() == 1
+    assert win.grid_model.item(0).data(Qt.ItemDataRole.UserRole) == "a.jpg"
+
+def test_person_manage_faces_mode(env):
+    from PyQt6.QtCore import Qt
+    win, store, p, f1 = env
+    win.persons_list.setCurrentRow(0)  # 张三
+    win._face_mgr_pid = p
+    win.refresh_view()
+    assert win.grid_model.item(0).data(Qt.ItemDataRole.UserRole) == ("face", f1)
