@@ -9,28 +9,9 @@ import cv2, numpy as np
 
 from app.detector import FaceBox, FaceDetector
 from app.model_paths import model_dir, ARCFACE_FILES
+from app.facecrop import umeyama_similarity, template_at
 
 _STRIDES = (8, 16, 32)
-# ArcFace 官方 112x112 五点模板（双目/鼻/双嘴角）
-_TEMPLATE_112 = np.array(
-    [[38.2946, 51.6963], [73.5318, 51.5014], [56.0252, 71.7366],
-     [41.5493, 92.3655], [70.7299, 92.2041]], dtype=np.float64)
-
-
-def _umeyama_similarity(src, dst):
-    """5 点 → 2x3 相似变换矩阵（旋转+均匀缩放+平移），确定性无 RANSAC。"""
-    src = np.asarray(src, np.float64); dst = np.asarray(dst, np.float64)
-    n = len(src)
-    src_c, dst_c = src.mean(0), dst.mean(0)
-    src_d, dst_d = src - src_c, dst - dst_c
-    u, s, vt = np.linalg.svd(dst_d.T @ src_d / n)
-    sign = np.eye(2)
-    if np.linalg.det(u) * np.linalg.det(vt) < 0:
-        sign[1, 1] = -1.0
-    r = u @ sign @ vt
-    scale = float((s * np.diag(sign)).sum() / ((src_d ** 2).sum() / n))
-    t = dst_c - scale * (r @ src_c)
-    return np.hstack([scale * r, t.reshape(2, 1)]).astype(np.float32)
 
 
 def _nms_indices(boxes, scores, thr=0.4):
@@ -133,7 +114,7 @@ class ArcFaceDetector:
 
     def embed(self, img_bgr, box):
         kps = box.row[4:14].reshape(5, 2)
-        m = _umeyama_similarity(kps, _TEMPLATE_112)
+        m = umeyama_similarity(kps, template_at(112))
         aligned = cv2.warpAffine(img_bgr, m, (112, 112),
                                  flags=cv2.INTER_LINEAR, borderValue=0)
         blob = cv2.dnn.blobFromImage(aligned, 1.0 / 127.5, (112, 112),

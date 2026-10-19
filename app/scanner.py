@@ -3,8 +3,9 @@ from pathlib import Path
 
 SUPPORTED_EXTS = {".jpg", ".jpeg", ".png", ".bmp", ".webp"}
 
-def scan_roots(roots, store):
+def scan_roots(roots, store, skip_prefixes=()):
     roots = [Path(r).as_posix() for r in roots]  # 统一正斜杠，missing 前缀匹配才可靠
+    skip_prefixes = [Path(p).as_posix().rstrip("/") + "/" for p in skip_prefixes]
     seen = set()
     todo = []
     known = store.known_fingerprints()
@@ -14,6 +15,8 @@ def scan_roots(roots, store):
                 if os.path.splitext(fn)[1].lower() not in SUPPORTED_EXTS:
                     continue
                 p = (Path(dirpath) / fn).as_posix()
+                if any(p.startswith(pre) for pre in skip_prefixes):
+                    continue  # 数据目录（thumbs/faces）不入索引
                 seen.add(p)
                 st = os.stat(p)
                 fp = (st.st_mtime, st.st_size)

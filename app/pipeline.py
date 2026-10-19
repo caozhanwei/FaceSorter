@@ -6,6 +6,7 @@ from app.scanner import scan_roots
 from app.features import extract
 from app.detector import expand_box
 from app.store import pack_feature
+from app.facecrop import aligned_crop, rect_crop, FACE_SIZE
 
 def imread_unicode(path):
     try:
@@ -39,7 +40,20 @@ def make_thumb(img, thumb_path: Path):
     thumb_path.parent.mkdir(parents=True, exist_ok=True)
     return imwrite_unicode(str(thumb_path), img)
 
-def process_one(path, store, detector, clusterer, thumb_dir: Path):
+def save_face_crop(img, box, face_id, face_dir: Path):
+    """清晰头像：有五点行 → 模板对齐裁剪；否则矩形裁剪。取自原图非缩略图。"""
+    if face_dir is None:
+        return
+    if box.row is not None and len(box.row) >= 14:
+        crop = aligned_crop(img, box.row, FACE_SIZE)
+    else:
+        crop = rect_crop(img, box, FACE_SIZE)
+    face_dir = Path(face_dir)
+    face_dir.mkdir(parents=True, exist_ok=True)
+    imwrite_unicode(str(face_dir / f"{face_id}.jpg"), crop, quality=88)
+
+def process_one(path, store, detector, clusterer, thumb_dir: Path,
+                face_dir: Path = None):
     path = Path(path).as_posix()  # 统一正斜杠（直接调用时可能是反斜杠）
     st = os.stat(path)
     photo_id = store.upsert_photo(path, st.st_mtime, st.st_size)  # 已存在则取回 id
@@ -70,15 +84,18 @@ def process_one(path, store, detector, clusterer, thumb_dir: Path):
                 vec = extract(gray[y1:y2, x1:x2])
             feature = pack_feature(vec)
         face_id = store.add_face(photo_id, b.x, b.y, b.w, b.h, b.quality, feature)
+        save_face_crop(img, b, face_id, face_dir)
         if b.clusturable and clusterer is not None:
             clusterer.assign(face_id)
     store.update_photo_meta(photo_id, has_face=1 if boxes else 0)
 
-def run_scan(roots, store, detector, clusterer, thumb_dir,
+def run_scan(roots, store, detector, clusterer, thumb_dir, face_dir=None,
              progress=None, cancel=None):
-    thumb_prefix = Path(thumb_dir).as_posix().rstrip("/") + "/"
+    skip_prefixes = [Path(thumb_dir)]
+    if face_dir is not None:
+        skip_prefixes.append(Path(face_dir))
     known_before = set(store.known_fingerprints().keys())
-    todo = [p for p in scan_roots(roots, store) if not p.startswith(thumb_prefix)]
+    todo = scan_roots(roots, store, skip_prefixes)
     total = len(todo)
     for i, path in enumerate(todo):
         if cancel is not None and cancel.is_set():
@@ -91,7 +108,8 @@ def run_scan(roots, store, detector, clusterer, thumb_dir,
                 store.con.commit()
             return
         try:
-            process_one(path, store, detector, clusterer, Path(thumb_dir))
+            process_one(path, store, detector, clusterer, Path(thumb_dir),
+                        Path(face_dir) if face_dir is not None else None)
         except OSError:
             raise  # 磁盘满等：上抛给 ScanWorker 提示并停止（spec §8）
         except Exception:

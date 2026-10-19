@@ -111,3 +111,51 @@ def test_process_one_embed_failure_falls_back_to_lbp(tmp_path, monkeypatch):
     rows = store.con.execute("SELECT feature FROM faces").fetchall()
     assert len(rows) == 1
     assert np.frombuffer(rows[0]["feature"], np.float32).shape == (5540,)
+
+
+# ---- 扫描期人脸裁剪落盘（清晰头像数据源，替代缩略图二次裁剪） ----
+
+class _FakeRowEngine:
+    """带五点行的引擎（YuNet/SCRFD 同布局），无 embed。"""
+    def detect(self, img):
+        from app.detector import FaceBox
+        return [FaceBox(10, 10, 80, 80, 100.0, True,
+                        row=np.arange(15, dtype=np.float32), score=0.9)]
+
+def test_process_one_saves_aligned_face_crop(tmp_path):
+    from app.facecrop import FACE_SIZE
+    store = Store(tmp_path / "t.db")
+    p = tmp_path / "p.jpg"; _write_img(p)
+    process_one(p.as_posix(), store, _FakeRowEngine(), None,
+                tmp_path / "thumbs", tmp_path / "faces")
+    fid = store.con.execute("SELECT id FROM faces").fetchone()["id"]
+    fp = tmp_path / "faces" / f"{fid}.jpg"
+    assert fp.exists()
+    img = cv2.imdecode(np.fromfile(str(fp), dtype=np.uint8), cv2.IMREAD_COLOR)
+    assert img.shape[:2] == (FACE_SIZE, FACE_SIZE)
+
+def test_process_one_saves_rect_crop_without_row(tmp_path):
+    # Haar 回退无关键点：也要落盘矩形裁剪
+    class _NoRow(_FakeRowEngine):
+        def detect(self, img):
+            from app.detector import FaceBox
+            return [FaceBox(10, 10, 80, 60, 100.0, True)]
+    store = Store(tmp_path / "t.db")
+    p = tmp_path / "p.jpg"; _write_img(p)
+    process_one(p.as_posix(), store, _NoRow(), None,
+                tmp_path / "thumbs", tmp_path / "faces")
+    fid = store.con.execute("SELECT id FROM faces").fetchone()["id"]
+    assert (tmp_path / "faces" / f"{fid}.jpg").exists()
+
+def test_run_scan_excludes_face_dir(tmp_path):
+    # faces 与 thumbs 同级：若扫描根覆盖数据目录，裁剪图不得被当照片索引
+    store = Store(tmp_path / "t.db")
+    for i in range(2):
+        _write_img(tmp_path / f"p{i}.jpg", seed=i)
+    (tmp_path / "faces").mkdir()
+    cv2.imencode(".jpg", np.zeros((8, 8), np.uint8))[1].tofile(
+        str(tmp_path / "faces" / "999.jpg"))
+    run_scan([str(tmp_path)], store, FaceDetector(), None,
+             tmp_path / "thumbs", tmp_path / "faces")
+    paths = [r["path"] for r in store.photos_for_view("all")]
+    assert not any("/faces/" in p for p in paths), paths

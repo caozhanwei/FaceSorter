@@ -7,10 +7,10 @@ class ScanWorker(QThread):
     done = pyqtSignal()
     failed = pyqtSignal(str)
 
-    def __init__(self, roots, store, detector, clusterer, thumb_dir):
+    def __init__(self, roots, store, detector, clusterer, thumb_dir, face_dir=None):
         super().__init__()
         self.roots, self.store, self.detector = roots, store, detector
-        self.clusterer, self.thumb_dir = clusterer, thumb_dir
+        self.clusterer, self.thumb_dir, self.face_dir = clusterer, thumb_dir, face_dir
         self._cancel = threading.Event()
         self._resume = threading.Event(); self._resume.set()
 

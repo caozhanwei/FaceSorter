@@ -214,6 +214,9 @@ class MainWindow(QMainWindow):
     def _thumb_dir(self):
         return self._cfg.get("thumb_dir") or (data_dir() / "thumbs")
 
+    def _face_dir(self):
+        return self._thumb_dir().parent / "faces"
+
     def _pick_roots(self):
         d = QFileDialog.getExistingDirectory(self, "选择照片目录")
         if d:
@@ -224,7 +227,7 @@ class MainWindow(QMainWindow):
             return
         det = self._detector_factory()
         self._worker = ScanWorker(self.roots, self.store, det, self.clusterer,
-                                  self._thumb_dir())
+                                  self._thumb_dir(), self._face_dir())
         self._worker.progress.connect(self.on_scan_progress)
         self._worker.done.connect(self.on_scan_done)
         self._worker.failed.connect(self.on_scan_failed)
