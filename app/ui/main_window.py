@@ -13,6 +13,7 @@ from app.person_face import average_face
 from app.ui.thumb_provider import ThumbProvider
 from app.ui.scan_progress import ScanWorker
 from app.ui.photo_viewer import PhotoViewer
+from app.ui.help import HelpDialog
 from app.ui.persons_model import (MIME_FACE_IDS, persons_display,
                                   encode_face_ids, decode_face_ids)
 
@@ -275,6 +276,9 @@ class MainWindow(QMainWindow):
         self.act_export.setShortcut(QKeySequence("Ctrl+E"))
         self.act_about = QAction(st.standardIcon(QStyle.StandardPixmap.SP_MessageBoxInformation),
                                  "关于")
+        self.act_help = QAction(st.standardIcon(QStyle.StandardPixmap.SP_DialogHelpButton),
+                                "使用帮助(&H)")
+        self.act_help.setShortcut(QKeySequence("F1"))
         self.act_dir.triggered.connect(self._pick_roots)
         self.act_scan.triggered.connect(self._start_scan)
         self.act_pause.triggered.connect(self._toggle_pause)
@@ -282,12 +286,15 @@ class MainWindow(QMainWindow):
         self.act_settings.triggered.connect(self._open_settings)
         self.act_export.triggered.connect(self._export_person)
         self.act_about.triggered.connect(self._about)
+        self.act_help.triggered.connect(
+            lambda: HelpDialog(self).exec())
         for a in (self.act_dir, self.act_scan, self.act_pause, self.act_cancel):
             tb.addAction(a)
         tb.addSeparator()
         for a in (self.act_settings, self.act_export):
             tb.addAction(a)
         tb.addSeparator()
+        tb.addAction(self.act_help)
         tb.addAction(self.act_about)
 
         # 状态栏右侧常驻：进度条 + 计数

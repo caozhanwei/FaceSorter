@@ -12,7 +12,7 @@ pytest.importorskip("win32com.client")
 
 _REPO = Path(__file__).resolve().parent.parent
 
-PRODUCT_VERSION = "1.4.0"  # 与 build-msi.bat PRODUCTVERSION 同步
+PRODUCT_VERSION = "1.4.1"  # 与 build-msi.bat PRODUCTVERSION 同步
 
 VARIANTS = {
     "FaceSorter.msi": {

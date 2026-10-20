@@ -115,3 +115,60 @@ def test_viewer_zoom_fit(viewer_env, qapp):
     assert v.canvas.scale > s_fit
     v.canvas.fit()
     assert abs(v.canvas.scale - s_fit) < 1e-9
+
+
+# ---- EXIF 方向：扫描解码应用了 EXIF（正立坐标），浏览器必须同样应用 ----
+
+def _photo_exif(path, orientation, h=150, w=200, marker=False):
+    from PIL import Image
+    img = np.full((h, w, 3), 128, np.uint8)
+    if marker:  # 左上角红块：验证 180° 内容翻转
+        img[:50, :50] = (255, 0, 0)
+    im = Image.fromarray(img)
+    exif = Image.Exif()
+    exif[274] = orientation  # Orientation
+    im.save(str(path), exif=exif)
+    return path
+
+
+@pytest.mark.parametrize("orientation,up_size", [(6, (150, 200)), (8, (150, 200))])
+def test_viewer_applies_exif_orientation(tmp_path, qapp, orientation, up_size):
+    """orientation=6/8→90°/270°：画布宽高须是正立尺寸（与扫描记录一致）。
+
+    扫描端 cv2.imdecode 已按 EXIF 转正并把 width/height/人脸框记成正立坐标，
+    浏览器若用 QImage(path) 原样显示会出现图倒+框错位。
+    """
+    store = Store(tmp_path / "t.db")
+    p = _photo_exif(tmp_path / "r.jpg", orientation)  # 原始 200x150
+    pid = store.upsert_photo(p.as_posix(), 1.0, 10)
+    store.update_photo_meta(pid, width=up_size[0], height=up_size[1])
+    store.add_face(pid, 10, 10, 50, 50, 100.0, None)
+    v = PhotoViewer([p.as_posix()], 0, store)
+    assert (v.canvas._img.width(), v.canvas._img.height()) == up_size, \
+        "画布必须是 EXIF 转正后的图，与扫描记录的宽高一致"
+
+
+def test_viewer_exif_180_flips_content(tmp_path, qapp):
+    """orientation=3（180°）尺寸不变，验证内容上下左右翻转：红块到右下角。"""
+    store = Store(tmp_path / "t.db")
+    p = _photo_exif(tmp_path / "r180.jpg", 3, marker=True)
+    pid = store.upsert_photo(p.as_posix(), 1.0, 10)
+    store.update_photo_meta(pid, width=200, height=150)
+    v = PhotoViewer([p.as_posix()], 0, store)
+    img = v.canvas._img
+    def _rgb(x, y):
+        c = img.pixel(x, y)
+        return ((c >> 16) & 255, (c >> 8) & 255, c & 255)
+    r, g, b = _rgb(180, 130)
+    assert r > 180 and g < 90 and b < 90, "红块应翻到右下角"
+    r, g, b = _rgb(20, 20)
+    assert r < 180 and g > 90, "左上角应是灰底"
+
+
+def test_viewer_no_exif_unchanged(tmp_path, qapp):
+    """无 EXIF 的普通图不受影响。"""
+    store = Store(tmp_path / "t.db")
+    p = _photo(tmp_path / "plain.jpg")
+    pid = store.upsert_photo(p.as_posix(), 1.0, 10)
+    v = PhotoViewer([p.as_posix()], 0, store)
+    assert (v.canvas._img.width(), v.canvas._img.height()) == (200, 150)

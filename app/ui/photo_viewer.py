@@ -4,7 +4,8 @@
 （双击照片不再调系统程序，保持在应用内浏览。）
 """
 from PyQt6.QtCore import QPointF, QRectF, Qt
-from PyQt6.QtGui import QAction, QColor, QImage, QPainter, QPen
+from PyQt6.QtGui import (QAction, QColor, QImage, QImageReader, QPainter,
+                         QPen)
 from PyQt6.QtWidgets import (QDialog, QLabel, QStyle, QToolBar,
                              QVBoxLayout, QWidget)
 
@@ -181,7 +182,11 @@ class PhotoViewer(QDialog):
         if path is None:
             self._info.setText("没有照片")
             return
-        img = QImage(path)
+        # QImage 不读 EXIF；扫描端 cv2.imdecode 已按 EXIF 转正记坐标，
+        # 这里必须同样转正，否则图倒框歪
+        reader = QImageReader(path)
+        reader.setAutoTransform(True)
+        img = reader.read()
         boxes = []
         photo = self.store.photo_by_path(path)
         if photo is not None:
