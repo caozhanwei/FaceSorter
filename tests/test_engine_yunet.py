@@ -21,6 +21,8 @@ def _img(name):
                         cv2.IMREAD_COLOR)
 
 
+@pytest.mark.skipif(not os.path.exists(os.path.join(ASSETS, "face1.jpg")),
+                    reason="需要 tests/assets/face1.jpg")
 def test_detect_single_face_with_row(engine):
     boxes = engine.detect(_img("face1.jpg"))
     assert len(boxes) >= 1
@@ -30,11 +32,15 @@ def test_detect_single_face_with_row(engine):
     assert b.row is not None and len(b.row) == 15  # x,y,w,h + 5关键点×2 + score，embed 依赖
 
 
+@pytest.mark.skipif(not os.path.exists(os.path.join(ASSETS, "noface.jpg")),
+                    reason="需要 tests/assets/noface.jpg")
 def test_detect_no_face_no_false_positive(engine):
     boxes = engine.detect(_img("noface.jpg"))
     assert [b for b in boxes if b.clusturable] == []
 
 
+@pytest.mark.skipif(not os.path.exists(os.path.join(ASSETS, "face1.jpg")),
+                    reason="需要 tests/assets/face1.jpg")
 def test_embed_shape_and_normalized(engine):
     boxes = [b for b in engine.detect(_img("face1.jpg")) if b.clusturable]
     v = engine.embed(_img("face1.jpg"), boxes[0])
@@ -42,6 +48,9 @@ def test_embed_shape_and_normalized(engine):
     assert abs(np.linalg.norm(v) - 1.0) < 1e-4
 
 
+@pytest.mark.skipif(not (os.path.exists(os.path.join(ASSETS, "face1.jpg"))
+                         and os.path.exists(os.path.join(ASSETS, "group.jpg"))),
+                    reason="需要 tests/assets/face1.jpg 与 group.jpg")
 def test_embed_same_face_more_similar_than_cross():
     # group.jpg 是 Obama+Biden 合影，face1.jpg 是 Obama 单人照：
     # SFace 应能跨照片认出同人（<0.363）并区分另一人（>0.5）

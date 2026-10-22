@@ -21,6 +21,8 @@ def _img(name):
                         cv2.IMREAD_COLOR)
 
 
+@pytest.mark.skipif(not os.path.exists(os.path.join(ASSETS, "face1.jpg")),
+                    reason="需要 tests/assets/face1.jpg")
 def test_detect_single_face_with_kps(engine):
     boxes = engine.detect(_img("face1.jpg"))
     assert len(boxes) >= 1
@@ -34,10 +36,15 @@ def test_detect_single_face_with_kps(engine):
     assert (kps[:, 1] >= b.y).all() and (kps[:, 1] <= b.y + b.h).all()
 
 
+@pytest.mark.skipif(not os.path.exists(os.path.join(ASSETS, "noface.jpg")),
+                    reason="需要 tests/assets/noface.jpg")
 def test_detect_no_face(engine):
     assert [b for b in engine.detect(_img("noface.jpg")) if b.clusturable] == []
 
 
+@pytest.mark.skipif(not (os.path.exists(os.path.join(ASSETS, "face1.jpg"))
+                         and os.path.exists(os.path.join(ASSETS, "group.jpg"))),
+                    reason="需要 tests/assets/face1.jpg 与 group.jpg")
 def test_embed_shape_and_cross_person():
     # 合影里的脸较小（<60px），单独放宽聚类门槛只考察嵌入质量
     from app.engine_arcface import ArcFaceDetector
