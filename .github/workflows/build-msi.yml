@@ -1,0 +1,90 @@
+name: Build MSI
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+
+      - name: Derive variant from repo name
+        shell: pwsh
+        run: |
+          $v = if ($env:GITHUB_REPOSITORY -like '*ArcFace*') { 'arcface' } else { 'yunet' }
+          echo "VARIANT=$v"
+          "VARIANT=$v" >> $env:GITHUB_ENV
+
+      - name: Install WiX 3.14
+        shell: pwsh
+        run: choco install wixtoolset --version=3.14.1.872 -y
+
+      - name: Set WIX to candle.exe directory
+        shell: pwsh
+        run: |
+          $candle = Get-ChildItem 'C:\Program Files (x86)\WiX Toolset*\bin\candle.exe' | Select-Object -First 1
+          if (-not $candle) { throw 'candle.exe not found after choco install' }
+          echo "WIX=$($candle.DirectoryName)"
+          "WIX=$($candle.DirectoryName)" >> $env:GITHUB_ENV
+
+      - name: Download models (yunet)
+        if: env.VARIANT == 'yunet'
+        shell: pwsh
+        run: |
+          $zoo = 'https://github.com/opencv/opencv_zoo/raw/main'
+          curl.exe -L --fail --retry 3 -o models/face_detection_yunet_2023mar.onnx "$zoo/face_detection_yunet/face_detection_yunet_2023mar.onnx"
+          curl.exe -L --fail --retry 3 -o models/face_recognition_sface_2021dec.onnx "$zoo/face_recognition_sface/face_recognition_sface_2021dec.onnx"
+          Get-ChildItem models
+
+      - name: Download models (arcface)
+        if: env.VARIANT == 'arcface'
+        shell: pwsh
+        run: |
+          curl.exe -L --fail --retry 3 -o buffalo_l.zip https://github.com/deepinsight/insightface/releases/download/v0.7/buffalo_l.zip
+          Expand-Archive buffalo_l.zip -DestinationPath unpacked
+          Copy-Item unpacked/det_10g.onnx models/
+          Copy-Item unpacked/w600k_r50.onnx models/
+          Get-ChildItem models
+
+      - name: Install Python deps
+        shell: pwsh
+        run: |
+          python -m venv .venv
+          .venv\Scripts\python.exe -m pip install --upgrade pip
+          .venv\Scripts\python.exe -m pip install -r requirements.txt -r requirements-dev.txt
+
+      - name: Run tests
+        shell: pwsh
+        run: .venv\Scripts\python.exe -m pytest -q
+
+      - name: Build dist (PyInstaller)
+        shell: cmd
+        run: call build.bat %VARIANT%
+
+      - name: Build MSI (WiX)
+        shell: cmd
+        run: call build-msi.bat %VARIANT%
+
+      - name: Upload MSI artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: msi-${{ env.VARIANT }}
+          path: dist/*.msi
+          if-no-files-found: error
+
+      - name: Attach MSI to release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*.msi
+          fail_on_unmatched_files: true

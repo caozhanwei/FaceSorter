@@ -3,7 +3,7 @@ rem FaceSorter 一键 MSI 打包：heat 收割 dist\<ProductDir> -> candle -> li
 rem 用法: build-msi.bat [yunet^|arcface]（默认 yunet = 主线 FaceSorter.msi）
 rem 依赖：先跑 build.bat 产出对应 dist 目录；WiX 3.14 在 %WIX%
 setlocal
-set WIX=G:\work\tools\wix314\tools
+if not defined WIX set WIX=G:\work\tools\wix314\tools
 set PRODUCTVERSION=1.4.1
 set OBJ=installer\obj
 
