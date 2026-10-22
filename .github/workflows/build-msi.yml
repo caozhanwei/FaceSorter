@@ -26,14 +26,14 @@ jobs:
           echo "VARIANT=$v"
           "VARIANT=$v" >> $env:GITHUB_ENV
 
-      - name: Install WiX 3.14
-        shell: pwsh
-        run: choco install wixtoolset --version=3.14.1.872 -y
-
-      - name: Set WIX to candle.exe directory
+      - name: Ensure WiX 3.x and set WIX to candle.exe directory
         shell: pwsh
         run: |
-          $candle = Get-ChildItem 'C:\Program Files (x86)\WiX Toolset*\bin\candle.exe' | Select-Object -First 1
+          $candle = Get-ChildItem 'C:\Program Files (x86)\WiX Toolset*\bin\candle.exe' -ErrorAction SilentlyContinue | Select-Object -First 1
+          if (-not $candle) {
+            choco install wixtoolset --version=3.14.1.872 -y
+            $candle = Get-ChildItem 'C:\Program Files (x86)\WiX Toolset*\bin\candle.exe' | Select-Object -First 1
+          }
           if (-not $candle) { throw 'candle.exe not found after choco install' }
           echo "WIX=$($candle.DirectoryName)"
           "WIX=$($candle.DirectoryName)" >> $env:GITHUB_ENV
