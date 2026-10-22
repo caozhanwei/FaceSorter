@@ -24,7 +24,7 @@ if /i "%1"=="arcface" (
 )
 
 if not exist "%WIX%\candle.exe" (
-  echo [ERROR] WiX toolchain not found at %WIX% & exit /b 1
+  echo [ERROR] WiX toolchain not found at "%WIX%" & exit /b 1
 )
 if not exist "dist\%PRODUCTDIR%\%EXENAME%" (
   echo [ERROR] dist\%PRODUCTDIR%\%EXENAME% missing, run build.bat first & exit /b 1
