@@ -1,4 +1,5 @@
 name: Build MSI
+# tag v* 触发：跑测试 -> PyInstaller -> WiX 打 MSI -> 附到 Release
 
 on:
   push:
